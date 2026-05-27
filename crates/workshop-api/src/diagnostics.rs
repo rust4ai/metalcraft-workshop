@@ -1,0 +1,252 @@
+//! Diagnostics-session viewer. Mirrors the writer in
+//! `metalcraft-agent/src/diagnostics.rs`: each `<project>/logs/<timestamp>/`
+//! directory is a session containing:
+//!   - `session_info.json`             — persona/model/cwd/tools/skills
+//!   - `turn_NNN.json`                 — agent message history after each turn
+//!   - `llm_request_NNN.json`          — raw LLM call snapshot (request only)
+//!   - `<event>_after_turn_NNN.json`   — config-change markers
+//!   - `compaction_after_turn_NNN.json`— context-compaction markers
+//!
+//! For the workshop's "chats" view we stitch these back into a
+//! [`ChatTimeline`] ordered by turn index.
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticsSessionSummary {
+    pub id: String,
+    pub timestamp: String,
+    pub persona_name: Option<String>,
+    pub persona_slug: Option<String>,
+    pub model_name: Option<String>,
+    pub turn_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub timestamp: Option<String>,
+    pub persona_name: Option<String>,
+    pub persona_slug: Option<String>,
+    pub model_name: Option<String>,
+    pub cwd: Option<String>,
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub auto_approve: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TimelineEvent {
+    Turn {
+        turn: usize,
+        messages: Vec<Value>,
+    },
+    LlmRequest {
+        turn: usize,
+        snapshot: Value,
+    },
+    ConfigChange {
+        event: String,
+        after_turn: usize,
+        details: Value,
+    },
+    Compaction {
+        after_turn: usize,
+        before_tokens: usize,
+        after_tokens: usize,
+    },
+}
+
+impl TimelineEvent {
+    fn sort_key(&self) -> (usize, u8) {
+        // u8 is a tiebreaker so multiple events at the same turn render in a
+        // sensible order: turn body → llm_request → config_change → compaction.
+        match self {
+            TimelineEvent::Turn { turn, .. } => (*turn, 0),
+            TimelineEvent::LlmRequest { turn, .. } => (*turn, 1),
+            TimelineEvent::ConfigChange { after_turn, .. } => (*after_turn, 2),
+            TimelineEvent::Compaction { after_turn, .. } => (*after_turn, 3),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatTimeline {
+    pub session: SessionInfo,
+    pub events: Vec<TimelineEvent>,
+}
+
+pub fn logs_dir(project_root: &Path) -> PathBuf {
+    project_root.join("logs")
+}
+
+pub fn list_sessions(project_root: &Path) -> Vec<DiagnosticsSessionSummary> {
+    let dir = logs_dir(project_root);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut out: Vec<DiagnosticsSessionSummary> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .map(|e| {
+            let session_dir = e.path();
+            let id = session_dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("?")
+                .to_string();
+            let info_path = session_dir.join("session_info.json");
+            let info: Option<SessionInfo> = std::fs::read_to_string(&info_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok());
+            let turn_count = count_turn_files(&session_dir);
+            DiagnosticsSessionSummary {
+                timestamp: info
+                    .as_ref()
+                    .and_then(|i| i.timestamp.clone())
+                    .unwrap_or_else(|| id.clone()),
+                persona_name: info.as_ref().and_then(|i| i.persona_name.clone()),
+                persona_slug: info.as_ref().and_then(|i| i.persona_slug.clone()),
+                model_name: info.as_ref().and_then(|i| i.model_name.clone()),
+                turn_count,
+                id,
+            }
+        })
+        .collect();
+
+    // Newest-first; the timestamp directory names sort lexicographically by
+    // time since they're written as YYYY-MM-DDTHH-MM-SS.
+    out.sort_by(|a, b| b.id.cmp(&a.id));
+    out
+}
+
+pub fn load_session(project_root: &Path, session_id: &str) -> anyhow::Result<ChatTimeline> {
+    let session_dir = logs_dir(project_root).join(session_id);
+    if !session_dir.is_dir() {
+        anyhow::bail!("session '{}' not found", session_id);
+    }
+
+    let info: SessionInfo = std::fs::read_to_string(session_dir.join("session_info.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(SessionInfo {
+            timestamp: None,
+            persona_name: None,
+            persona_slug: None,
+            model_name: None,
+            cwd: None,
+            system_prompt: None,
+            tools: Vec::new(),
+            skills: Vec::new(),
+            auto_approve: false,
+        });
+
+    let mut events = Vec::new();
+    for entry in std::fs::read_dir(&session_dir)?.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name == "session_info.json" {
+            continue;
+        }
+        if let Some(ev) = parse_event_file(&path, name) {
+            events.push(ev);
+        }
+    }
+    events.sort_by_key(|e| e.sort_key());
+
+    Ok(ChatTimeline {
+        session: info,
+        events,
+    })
+}
+
+fn count_turn_files(session_dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(session_dir) else {
+        return 0;
+    };
+    rd.flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("turn_") && n.ends_with(".json"))
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&raw).ok()?;
+
+    if let Some(turn) = name
+        .strip_prefix("turn_")
+        .and_then(|s| s.strip_suffix(".json"))
+        .and_then(|s| s.parse::<usize>().ok())
+    {
+        let messages = value
+            .get("messages")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        return Some(TimelineEvent::Turn { turn, messages });
+    }
+
+    if let Some(turn) = name
+        .strip_prefix("llm_request_")
+        .and_then(|s| s.strip_suffix(".json"))
+        .and_then(|s| s.parse::<usize>().ok())
+    {
+        return Some(TimelineEvent::LlmRequest {
+            turn,
+            snapshot: value,
+        });
+    }
+
+    if name.starts_with("compaction_after_turn_") {
+        let after_turn = value
+            .get("after_turn")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let before_tokens = value
+            .get("before_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let after_tokens = value
+            .get("after_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        return Some(TimelineEvent::Compaction {
+            after_turn,
+            before_tokens,
+            after_tokens,
+        });
+    }
+
+    if let Some(rest) = name.strip_suffix(".json") {
+        if let Some((event, turn_str)) = rest.split_once("_after_turn_") {
+            if let Ok(after_turn) = turn_str.parse::<usize>() {
+                let details = value
+                    .get("details")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                return Some(TimelineEvent::ConfigChange {
+                    event: event.to_string(),
+                    after_turn,
+                    details,
+                });
+            }
+        }
+    }
+
+    None
+}
