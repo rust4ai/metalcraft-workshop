@@ -8,14 +8,16 @@ use tauri::{Emitter, Manager};
 
 use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
-    diagnostics, flows, personas, project, skills,
+    api_tools::{ApiToolConfig, ApiToolSummary},
+    connection::{LocalConnection, ProjectConnection, RemoteConnection},
+    diagnostics, personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
 
-/// Shared app state: the currently-open project root (if any) and its
-/// filesystem watcher.
+/// Shared app state: the currently-active connection (local dir or remote
+/// agent), plus the filesystem watcher (only attached in local mode).
 struct AppState {
-    project_root: Mutex<Option<PathBuf>>,
+    connection: Mutex<Option<Arc<dyn ProjectConnection>>>,
     watcher: Mutex<Option<ProjectWatcher>>,
     app_handle: tauri::AppHandle,
 }
@@ -28,7 +30,17 @@ impl AppState {
     }
 }
 
-// ---------- Tauri commands ----------
+fn require_connection(
+    state: &tauri::State<'_, Arc<AppState>>,
+) -> Result<Arc<dyn ProjectConnection>, String> {
+    state
+        .connection
+        .lock()
+        .clone()
+        .ok_or_else(|| "no project open".to_string())
+}
+
+// ---------- Connection commands ----------
 
 #[tauri::command]
 async fn open_project(
@@ -39,10 +51,10 @@ async fn open_project(
     if !path.is_dir() {
         return Err(format!("not a directory: {}", path.display()));
     }
-    let snapshot = project::scan_project(&path);
+    let conn: Arc<dyn ProjectConnection> = Arc::new(LocalConnection::new(path.clone()));
+    let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
 
-    // Replace current project + watcher.
-    *state.project_root.lock() = Some(path.clone());
+    *state.connection.lock() = Some(conn);
     let st = state.inner().clone();
     let watcher = watcher::start_watching(&path, move |ChangedPath { path, kind }| {
         st.emit(WorkshopEvent::FileChanged { path, kind });
@@ -51,13 +63,35 @@ async fn open_project(
     *state.watcher.lock() = Some(watcher);
 
     state.emit(WorkshopEvent::ProjectOpened(snapshot));
-    persist_recent(&path);
+    persist_recent(RecentEntry::local(&path));
+    Ok(())
+}
+
+#[tauri::command]
+async fn open_remote(
+    base_url: String,
+    api_key: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    if base_url.trim().is_empty() {
+        return Err("base URL is required".into());
+    }
+    let conn = RemoteConnection::new(base_url.clone(), api_key.clone())
+        .map_err(|e| format!("remote client: {e}"))?;
+    let conn: Arc<dyn ProjectConnection> = Arc::new(conn);
+    let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
+
+    *state.connection.lock() = Some(conn);
+    *state.watcher.lock() = None; // remote mode has no local file watcher
+
+    state.emit(WorkshopEvent::ProjectOpened(snapshot));
+    persist_recent(RecentEntry::remote(&base_url, &api_key));
     Ok(())
 }
 
 #[tauri::command]
 async fn close_project(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    *state.project_root.lock() = None;
+    *state.connection.lock() = None;
     *state.watcher.lock() = None;
     state.emit(WorkshopEvent::ProjectClosed);
     Ok(())
@@ -65,10 +99,8 @@ async fn close_project(state: tauri::State<'_, Arc<AppState>>) -> Result<(), Str
 
 #[tauri::command]
 async fn refresh_snapshot(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    let Some(root) = state.project_root.lock().clone() else {
-        return Err("no project open".into());
-    };
-    let snapshot = project::scan_project(&root);
+    let conn = require_connection(&state)?;
+    let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
     state.emit(WorkshopEvent::Snapshot(snapshot));
     Ok(())
 }
@@ -77,16 +109,16 @@ async fn refresh_snapshot(state: tauri::State<'_, Arc<AppState>>) -> Result<(), 
 async fn get_snapshot(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Option<project::ProjectSnapshot>, String> {
-    let root = state.project_root.lock().clone();
-    Ok(root.map(|r| project::scan_project(&r)))
+    let conn = state.connection.lock().clone();
+    match conn {
+        Some(c) => Ok(Some(c.snapshot().await.map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
 }
 
 #[tauri::command]
-async fn list_recents() -> Result<Vec<String>, String> {
-    Ok(load_recents()
-        .into_iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect())
+async fn list_recents() -> Result<Vec<RecentEntry>, String> {
+    Ok(load_recents())
 }
 
 // ---- Personas ----
@@ -96,8 +128,8 @@ async fn get_persona(
     slug: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<personas::Persona, String> {
-    let root = require_root(&state)?;
-    personas::load(&root, &slug).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.get_persona(&slug).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -106,11 +138,13 @@ async fn save_persona(
     persona: personas::Persona,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let root = require_root(&state)?;
     if !personas::is_safe_slug(&slug) {
         return Err(format!("unsafe slug: {slug}"));
     }
-    personas::save(&root, &slug, &persona).map_err(|e| e.to_string())?;
+    let conn = require_connection(&state)?;
+    conn.save_persona(&slug, &persona)
+        .await
+        .map_err(|e| e.to_string())?;
     state.emit(WorkshopEvent::SaveOk {
         kind: FileKind::Persona,
         id: slug,
@@ -123,8 +157,8 @@ async fn delete_persona(
     slug: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let root = require_root(&state)?;
-    personas::delete(&root, &slug).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.delete_persona(&slug).await.map_err(|e| e.to_string())
 }
 
 // ---- Skills ----
@@ -134,8 +168,8 @@ async fn get_skill(
     slug: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<skills::Skill, String> {
-    let root = require_root(&state)?;
-    skills::load(&root, &slug).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.get_skill(&slug).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -145,8 +179,10 @@ async fn save_skill(
     body: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let root = require_root(&state)?;
-    skills::save(&root, &slug, &description, &body).map_err(|e| e.to_string())?;
+    let conn = require_connection(&state)?;
+    conn.save_skill(&slug, &description, &body)
+        .await
+        .map_err(|e| e.to_string())?;
     state.emit(WorkshopEvent::SaveOk {
         kind: FileKind::Skill,
         id: slug,
@@ -159,8 +195,8 @@ async fn delete_skill(
     slug: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let root = require_root(&state)?;
-    skills::delete(&root, &slug).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.delete_skill(&slug).await.map_err(|e| e.to_string())
 }
 
 // ---- Flows ----
@@ -170,8 +206,8 @@ async fn get_flow(
     id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<metalcraft_flows::SavedFlow, String> {
-    let root = require_root(&state)?;
-    flows::load(&root, &id).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.get_flow(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -179,9 +215,9 @@ async fn save_flow(
     flow: metalcraft_flows::SavedFlow,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<String>, String> {
-    let root = require_root(&state)?;
+    let conn = require_connection(&state)?;
     let id = flow.id.clone();
-    let errors = flows::save(&root, &flow).map_err(|e| e.to_string())?;
+    let errors = conn.save_flow(&flow).await.map_err(|e| e.to_string())?;
     if errors.is_empty() {
         state.emit(WorkshopEvent::SaveOk {
             kind: FileKind::Flow,
@@ -193,8 +229,8 @@ async fn save_flow(
 
 #[tauri::command]
 async fn delete_flow(id: String, state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
-    let root = require_root(&state)?;
-    Ok(flows::delete(&root, &id))
+    let conn = require_connection(&state)?;
+    conn.delete_flow(&id).await.map_err(|e| e.to_string())
 }
 
 // ---- Diagnostics ----
@@ -203,8 +239,8 @@ async fn delete_flow(id: String, state: tauri::State<'_, Arc<AppState>>) -> Resu
 async fn list_diagnostics_sessions(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<diagnostics::DiagnosticsSessionSummary>, String> {
-    let root = require_root(&state)?;
-    Ok(diagnostics::list_sessions(&root))
+    let conn = require_connection(&state)?;
+    conn.list_diagnostics().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -212,18 +248,85 @@ async fn load_diagnostics_session(
     id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<diagnostics::ChatTimeline, String> {
-    let root = require_root(&state)?;
-    diagnostics::load_session(&root, &id).map_err(|e| e.to_string())
+    let conn = require_connection(&state)?;
+    conn.load_diagnostics(&id).await.map_err(|e| e.to_string())
 }
 
-// ---- Helpers ----
+// ---- API tools ----
 
-fn require_root(state: &tauri::State<'_, Arc<AppState>>) -> Result<PathBuf, String> {
-    state
-        .project_root
-        .lock()
-        .clone()
-        .ok_or_else(|| "no project open".to_string())
+#[tauri::command]
+async fn list_api_tools(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<ApiToolSummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_api_tools().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_api_tool(
+    name: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<ApiToolConfig, String> {
+    let conn = require_connection(&state)?;
+    conn.get_api_tool(&name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn save_api_tool(
+    name: String,
+    config: ApiToolConfig,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.save_api_tool(&name, &config)
+        .await
+        .map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::ApiTool,
+        id: name,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_api_tool(
+    name: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_api_tool(&name).await.map_err(|e| e.to_string())
+}
+
+// ---- Recents ----
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RecentEntry {
+    Local { path: String },
+    Remote { base_url: String, api_key: String },
+}
+
+impl RecentEntry {
+    fn local(path: &std::path::Path) -> Self {
+        Self::Local {
+            path: path.to_string_lossy().to_string(),
+        }
+    }
+    fn remote(base_url: &str, api_key: &str) -> Self {
+        Self::Remote {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key: api_key.to_string(),
+        }
+    }
+
+    /// Key used to dedupe — for remote mode we ignore the api_key so rotating
+    /// the key doesn't create a duplicate entry.
+    fn dedupe_key(&self) -> String {
+        match self {
+            Self::Local { path } => format!("local:{path}"),
+            Self::Remote { base_url, .. } => format!("remote:{base_url}"),
+        }
+    }
 }
 
 fn recents_path() -> Option<PathBuf> {
@@ -231,22 +334,34 @@ fn recents_path() -> Option<PathBuf> {
     Some(base.join("metalcraft-workshop").join("recents.json"))
 }
 
-fn load_recents() -> Vec<PathBuf> {
+fn load_recents() -> Vec<RecentEntry> {
     let Some(p) = recents_path() else { return Vec::new() };
     let Ok(raw) = std::fs::read_to_string(&p) else {
         return Vec::new();
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    // Tolerate the v1 schema (plain list of strings) by falling back to
+    // parsing each entry as a Local path. Drop anything unreadable.
+    if let Ok(list) = serde_json::from_str::<Vec<RecentEntry>>(&raw) {
+        return list;
+    }
+    if let Ok(legacy) = serde_json::from_str::<Vec<String>>(&raw) {
+        return legacy
+            .into_iter()
+            .map(|p| RecentEntry::Local { path: p })
+            .collect();
+    }
+    Vec::new()
 }
 
-fn persist_recent(path: &std::path::Path) {
+fn persist_recent(entry: RecentEntry) {
     let Some(p) = recents_path() else { return };
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
+    let key = entry.dedupe_key();
     let mut recents = load_recents();
-    recents.retain(|r| r != path);
-    recents.insert(0, path.to_path_buf());
+    recents.retain(|r| r.dedupe_key() != key);
+    recents.insert(0, entry);
     recents.truncate(10);
     if let Ok(json) = serde_json::to_string_pretty(&recents) {
         let _ = std::fs::write(&p, json);
@@ -305,7 +420,7 @@ fn main() {
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = Arc::new(AppState {
-                project_root: Mutex::new(None),
+                connection: Mutex::new(None),
                 watcher: Mutex::new(None),
                 app_handle: handle.clone(),
             });
@@ -313,22 +428,37 @@ fn main() {
 
             if let Some(path) = cli_open.clone() {
                 if path.is_dir() {
-                    let snapshot = project::scan_project(&path);
-                    *state.project_root.lock() = Some(path.clone());
                     let st = state.clone();
-                    if let Ok(w) = watcher::start_watching(&path, move |ChangedPath { path, kind }| {
-                        st.emit(WorkshopEvent::FileChanged { path, kind });
-                    }) {
-                        *state.watcher.lock() = Some(w);
-                    }
-                    state.emit(WorkshopEvent::ProjectOpened(snapshot));
-                    persist_recent(&path);
+                    let path_for_open = path.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let conn: Arc<dyn ProjectConnection> =
+                            Arc::new(LocalConnection::new(path_for_open.clone()));
+                        match conn.snapshot().await {
+                            Ok(snapshot) => {
+                                *st.connection.lock() = Some(conn);
+                                let st_watch = st.clone();
+                                if let Ok(w) = watcher::start_watching(
+                                    &path_for_open,
+                                    move |ChangedPath { path, kind }| {
+                                        st_watch
+                                            .emit(WorkshopEvent::FileChanged { path, kind });
+                                    },
+                                ) {
+                                    *st.watcher.lock() = Some(w);
+                                }
+                                st.emit(WorkshopEvent::ProjectOpened(snapshot));
+                                persist_recent(RecentEntry::local(&path_for_open));
+                            }
+                            Err(e) => log::error!("cli open failed: {e}"),
+                        }
+                    });
                 }
             }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             open_project,
+            open_remote,
             close_project,
             refresh_snapshot,
             get_snapshot,
@@ -344,6 +474,10 @@ fn main() {
             delete_flow,
             list_diagnostics_sessions,
             load_diagnostics_session,
+            list_api_tools,
+            get_api_tool,
+            save_api_tool,
+            delete_api_tool,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");

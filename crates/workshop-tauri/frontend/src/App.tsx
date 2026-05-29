@@ -6,8 +6,9 @@ import PersonasView from "./components/PersonasView";
 import SkillsView from "./components/SkillsView";
 import FlowsView from "./components/FlowsView";
 import ChatsView from "./components/ChatsView";
+import ApiToolsView from "./components/ApiToolsView";
 
-export type Section = "personas" | "skills" | "flows" | "chats";
+export type Section = "personas" | "skills" | "flows" | "chats" | "api_tools";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -19,16 +20,27 @@ export default function App() {
       <ProjectPicker
         recents={workshop.recents}
         onOpen={(p?: string) => workshop.openProject(p)}
+        onOpenRemote={(url, key) => workshop.openRemote(url, key)}
       />
     );
   }
 
   const snap = workshop.snapshot;
+  const modeLabel = snap.mode === "remote" ? "API" : "DIR";
+  const modeClass =
+    snap.mode === "remote"
+      ? "bg-accent/20 text-accent-light"
+      : "bg-surface-2 text-gray-400";
 
   return (
     <div className="h-screen flex flex-col bg-surface-0 text-gray-200">
       <header className="flex items-center gap-3 px-4 py-2 bg-surface-1 border-b border-surface-3">
         <h1 className="text-sm font-semibold text-accent">Metalcraft Workshop</h1>
+        <span
+          className={`px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded font-mono ${modeClass}`}
+        >
+          {modeLabel}
+        </span>
         <span className="text-xs text-gray-500 font-mono truncate" title={snap.root}>
           {snap.root}
         </span>
@@ -78,6 +90,13 @@ export default function App() {
             <ChatsView
               snapshot={snap}
               selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
+          )}
+          {section === "api_tools" && (
+            <ApiToolsView
+              snapshot={snap}
+              selectedName={selectedId}
               onSelect={setSelectedId}
             />
           )}

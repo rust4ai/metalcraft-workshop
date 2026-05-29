@@ -63,6 +63,7 @@ fn classify(root: &Path, path: &Path) -> FileKind {
         "skills" => FileKind::Skill,
         "flows" => FileKind::Flow,
         "logs" => FileKind::Diagnostics,
+        "api-tools" => FileKind::ApiTool,
         _ => FileKind::Unknown,
     }
 }

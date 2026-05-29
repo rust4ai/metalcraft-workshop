@@ -14,6 +14,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "skills", label: "Skills" },
   { id: "flows", label: "Flows" },
   { id: "chats", label: "Chats" },
+  { id: "api_tools", label: "API tools" },
 ];
 
 export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect }: Props) {
@@ -21,12 +22,12 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
 
   return (
     <aside className="w-64 flex flex-col bg-surface-1 border-r border-surface-3">
-      <nav className="flex border-b border-surface-3">
+      <nav className="flex flex-wrap border-b border-surface-3">
         {SECTIONS.map((s) => (
           <button
             key={s.id}
             onClick={() => onSection(s.id)}
-            className={`flex-1 px-2 py-2 text-xs font-medium uppercase tracking-wide transition-colors ${
+            className={`flex-1 min-w-[60px] px-2 py-2 text-[10px] font-medium uppercase tracking-wide transition-colors ${
               section === s.id
                 ? "bg-surface-2 text-accent border-b-2 border-accent"
                 : "text-gray-500 hover:text-gray-200 hover:bg-surface-2"
@@ -66,30 +67,29 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
       </div>
 
       {section === "flows" && (
-        <button
-          onClick={() => onSelect("__new__")}
-          className="mx-3 my-2 px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
-        >
-          + New Flow
-        </button>
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Flow" />
       )}
       {section === "personas" && (
-        <button
-          onClick={() => onSelect("__new__")}
-          className="mx-3 my-2 px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
-        >
-          + New Persona
-        </button>
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Persona" />
       )}
       {section === "skills" && (
-        <button
-          onClick={() => onSelect("__new__")}
-          className="mx-3 my-2 px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
-        >
-          + New Skill
-        </button>
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Skill" />
+      )}
+      {section === "api_tools" && (
+        <NewButton onClick={() => onSelect("__new__")} label="+ New API Tool" />
       )}
     </aside>
+  );
+}
+
+function NewButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className="mx-3 my-2 px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -111,20 +111,30 @@ function listItems(snap: ProjectSnapshot, s: Section): { id: string; label: stri
         label: s.timestamp,
         sub: [s.persona_slug, s.model_name, `${s.turn_count} turns`].filter(Boolean).join(" • "),
       }));
+    case "api_tools":
+      return snap.api_tools.map((t) => ({
+        id: t.name,
+        label: t.name,
+        sub: t.description,
+      }));
   }
 }
 
 function emptyMessage(snap: ProjectSnapshot, s: Section): string {
   switch (s) {
     case "personas":
-      return snap.layout.has_personas_dir ? "No personas yet." : "personas/ directory not found.";
+      return snap.layout.has_personas ? "No personas yet." : "personas/ directory not found.";
     case "skills":
-      return snap.layout.has_skills_dir ? "No skills yet." : "skills/ directory not found.";
+      return snap.layout.has_skills ? "No skills yet." : "skills/ directory not found.";
     case "flows":
-      return snap.layout.has_flows_dir ? "No flows yet." : "flows/ directory not found.";
+      return snap.layout.has_flows ? "No flows yet." : "flows/ directory not found.";
     case "chats":
-      return snap.layout.has_logs_dir
+      return snap.layout.has_logs
         ? "No diagnostics sessions yet."
         : "logs/ directory not found. Run the agent with --diagnostics to generate sessions.";
+    case "api_tools":
+      return snap.layout.has_api_tools
+        ? "No API tools yet."
+        : "api-tools/ directory not found.";
   }
 }

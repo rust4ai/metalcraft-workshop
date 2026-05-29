@@ -1,5 +1,7 @@
 // Mirrors the wire types produced by workshop-api. Keep in sync.
 
+export type ConnectionMode = "local" | "remote";
+
 export interface PersonaSummary {
   slug: string;
   name: string;
@@ -103,27 +105,59 @@ export type ChatMessage =
   | { role: "tool_result"; id: string; call_id: string; name: string; result: string; is_error?: boolean };
 
 export interface ProjectLayout {
-  has_personas_dir: boolean;
-  has_skills_dir: boolean;
-  has_flows_dir: boolean;
-  has_logs_dir: boolean;
+  has_personas: boolean;
+  has_skills: boolean;
+  has_flows: boolean;
+  has_logs: boolean;
+  has_api_tools: boolean;
+}
+
+export interface ApiToolSummary {
+  name: string;
+  description: string;
+}
+
+export interface ApiToolConfig {
+  name: string;
+  description: string;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  parameters: unknown;
+  body_mapping: string;
+  body_template?: string | null;
+  body_defaults: Record<string, unknown>;
 }
 
 export interface ProjectSnapshot {
   root: string;
+  mode: ConnectionMode;
   personas: PersonaSummary[];
   skills: SkillSummary[];
   flows: FlowSummary[];
   sessions: DiagnosticsSessionSummary[];
+  api_tools: ApiToolSummary[];
   layout: ProjectLayout;
 }
 
-export type FileKind = "persona" | "skill" | "flow" | "diagnostics" | "unknown";
+export type FileKind =
+  | "persona"
+  | "skill"
+  | "flow"
+  | "diagnostics"
+  | "api_tool"
+  | "unknown";
 
 export type WorkshopEvent =
-  | { type: "project_opened"; root: string; personas: PersonaSummary[]; skills: SkillSummary[]; flows: FlowSummary[]; sessions: DiagnosticsSessionSummary[]; layout: ProjectLayout }
+  | ({ type: "project_opened" } & ProjectSnapshot)
   | { type: "project_closed" }
   | ({ type: "snapshot" } & ProjectSnapshot)
   | { type: "file_changed"; path: string; kind: FileKind }
   | { type: "save_ok"; kind: FileKind; id: string }
   | { type: "error"; message: string };
+
+// Recents are persisted by the Tauri layer as a tagged union (RecentEntry in
+// main.rs). Keep in sync.
+export type RecentEntry =
+  | { kind: "local"; path: string }
+  | { kind: "remote"; base_url: string; api_key: string };

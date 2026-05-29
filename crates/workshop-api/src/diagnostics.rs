@@ -18,19 +18,31 @@ use std::path::{Path, PathBuf};
 pub struct DiagnosticsSessionSummary {
     pub id: String,
     pub timestamp: String,
+    #[serde(default)]
     pub persona_name: Option<String>,
+    #[serde(default)]
     pub persona_slug: Option<String>,
+    #[serde(default)]
     pub model_name: Option<String>,
+    /// Local mode computes this from the session directory; remote mode leaves
+    /// it 0 because the agent's snapshot doesn't include it.
+    #[serde(default)]
     pub turn_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
+    #[serde(default)]
     pub timestamp: Option<String>,
+    #[serde(default)]
     pub persona_name: Option<String>,
+    #[serde(default)]
     pub persona_slug: Option<String>,
+    #[serde(default)]
     pub model_name: Option<String>,
+    #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default)]
     pub system_prompt: Option<String>,
     #[serde(default)]
     pub tools: Vec<String>,
@@ -73,6 +85,12 @@ impl TimelineEvent {
             TimelineEvent::ConfigChange { after_turn, .. } => (*after_turn, 2),
             TimelineEvent::Compaction { after_turn, .. } => (*after_turn, 3),
         }
+    }
+
+    /// Public wrapper used by [`crate::connection::RemoteConnection`] to sort
+    /// the events it reassembles from the agent's JSON envelopes.
+    pub fn sort_key_pub(&self) -> (usize, u8) {
+        self.sort_key()
     }
 }
 
@@ -170,24 +188,38 @@ pub fn load_session(project_root: &Path, session_id: &str) -> anyhow::Result<Cha
     })
 }
 
-fn count_turn_files(session_dir: &Path) -> usize {
-    let Ok(rd) = std::fs::read_dir(session_dir) else {
-        return 0;
-    };
-    rd.flatten()
-        .filter(|e| {
-            e.file_name()
-                .to_str()
-                .map(|n| n.starts_with("turn_") && n.ends_with(".json"))
-                .unwrap_or(false)
-        })
-        .count()
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+
+    /// Agent (`workshop_api.rs`) only emits `id, timestamp, persona_slug?,
+    /// model_name?`. Workshop adds `persona_name` and `turn_count` for the
+    /// richer local view, so its struct must tolerate the agent's sparser
+    /// payload without erroring.
+    #[test]
+    fn diagnostics_summary_accepts_agent_payload() {
+        let agent_json = r#"{"id":"2026-05-28T17-46-48","timestamp":"2026-05-28T17-46-48","persona_slug":"reporter","model_name":"opus-4-7"}"#;
+        let parsed: DiagnosticsSessionSummary = serde_json::from_str(agent_json).unwrap();
+        assert_eq!(parsed.id, "2026-05-28T17-46-48");
+        assert_eq!(parsed.persona_name, None);
+        assert_eq!(parsed.turn_count, 0);
+    }
+
+    /// Same survival check for `SessionInfo`, which the agent may emit with
+    /// any subset of fields.
+    #[test]
+    fn session_info_accepts_empty_payload() {
+        let parsed: SessionInfo = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed.timestamp, None);
+        assert!(parsed.tools.is_empty());
+        assert!(!parsed.auto_approve);
+    }
 }
 
-fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    let value: Value = serde_json::from_str(&raw).ok()?;
-
+/// Parse one timeline entry from its filename + already-decoded JSON value.
+/// Used by both the local file walker (after reading the file from disk) and
+/// the remote client (after receiving the agent's `{file, data}` envelope).
+pub fn parse_timeline_entry(name: &str, value: Value) -> Option<TimelineEvent> {
     if let Some(turn) = name
         .strip_prefix("turn_")
         .and_then(|s| s.strip_suffix(".json"))
@@ -213,10 +245,7 @@ fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
     }
 
     if name.starts_with("compaction_after_turn_") {
-        let after_turn = value
-            .get("after_turn")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let after_turn = value.get("after_turn").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let before_tokens = value
             .get("before_tokens")
             .and_then(|v| v.as_u64())
@@ -235,10 +264,7 @@ fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
     if let Some(rest) = name.strip_suffix(".json") {
         if let Some((event, turn_str)) = rest.split_once("_after_turn_") {
             if let Ok(after_turn) = turn_str.parse::<usize>() {
-                let details = value
-                    .get("details")
-                    .cloned()
-                    .unwrap_or(Value::Null);
+                let details = value.get("details").cloned().unwrap_or(Value::Null);
                 return Some(TimelineEvent::ConfigChange {
                     event: event.to_string(),
                     after_turn,
@@ -249,4 +275,24 @@ fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
     }
 
     None
+}
+
+fn count_turn_files(session_dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(session_dir) else {
+        return 0;
+    };
+    rd.flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("turn_") && n.ends_with(".json"))
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+fn parse_event_file(path: &Path, name: &str) -> Option<TimelineEvent> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let value: Value = serde_json::from_str(&raw).ok()?;
+    parse_timeline_entry(name, value)
 }

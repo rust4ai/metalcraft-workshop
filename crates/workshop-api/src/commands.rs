@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::api_tools::ApiToolConfig;
 use crate::personas::Persona;
 use crate::project::ProjectSnapshot;
 use metalcraft_flows::SavedFlow;
@@ -12,6 +13,7 @@ use metalcraft_flows::SavedFlow;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FrontendCommand {
     OpenProject { path: PathBuf },
+    OpenRemote { base_url: String, api_key: String },
     CloseProject,
     Refresh,
     PersonaSave { slug: String, persona: Persona },
@@ -20,6 +22,8 @@ pub enum FrontendCommand {
     SkillDelete { slug: String },
     FlowSave { flow: SavedFlow },
     FlowDelete { id: String },
+    ApiToolSave { name: String, config: ApiToolConfig },
+    ApiToolDelete { name: String },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -29,6 +33,7 @@ pub enum FileKind {
     Skill,
     Flow,
     Diagnostics,
+    ApiTool,
     Unknown,
 }
 
