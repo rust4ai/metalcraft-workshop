@@ -34,6 +34,7 @@ pub enum FileKind {
     Flow,
     Diagnostics,
     ApiTool,
+    Key,
     Unknown,
 }
 

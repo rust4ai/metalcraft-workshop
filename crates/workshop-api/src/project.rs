@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::api_tools::{self, ApiToolSummary};
 use crate::diagnostics::{self, DiagnosticsSessionSummary};
 use crate::flows;
+use crate::keys::{self, KeySummary};
 use crate::personas::{self, PersonaSummary};
 use crate::skills::{self, SkillSummary};
 
@@ -25,6 +26,8 @@ pub struct ProjectSnapshot {
     pub sessions: Vec<DiagnosticsSessionSummary>,
     #[serde(default)]
     pub api_tools: Vec<ApiToolSummary>,
+    #[serde(default)]
+    pub keys: Vec<KeySummary>,
     pub layout: ProjectLayout,
 }
 
@@ -53,6 +56,7 @@ pub fn scan_local(root: &Path) -> ProjectSnapshot {
         flows: flows::list(root),
         sessions: diagnostics::list_sessions(root),
         api_tools: api_tools::list(root),
+        keys: keys::list(root),
         layout: ProjectLayout {
             has_personas: personas::personas_dir(root).is_dir(),
             has_skills: skills::skills_dir(root).is_dir(),

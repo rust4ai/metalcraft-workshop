@@ -16,6 +16,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "chats", label: "Chats" },
   { id: "sessions", label: "Sessions" },
   { id: "api_tools", label: "API tools" },
+  { id: "keys", label: "Keys" },
   { id: "packs", label: "Packs" },
 ];
 
@@ -90,6 +91,9 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
       {section === "api_tools" && (
         <NewButton onClick={() => onSelect("__new__")} label="+ New API Tool" />
       )}
+      {section === "keys" && (
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Key" />
+      )}
       {section === "chats" && (
         <NewButton onClick={() => onSelect("__new__")} label="+ New Chat" />
       )}
@@ -160,6 +164,12 @@ function listItems(snap: ProjectSnapshot, s: Section): SidebarItem[] {
         sub: t.description,
         packId: t.pack_id ?? null,
       }));
+    case "keys":
+      return snap.keys.map((k) => ({
+        id: k.name,
+        label: k.name,
+        sub: k.masked,
+      }));
     case "packs":
       return [];
   }
@@ -185,6 +195,8 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return snap.layout.has_api_tools
         ? "No API tools yet."
         : "api-tools/ directory not found.";
+    case "keys":
+      return "No API keys stored yet. Click + New Key to add one.";
     case "packs":
       return snap.mode === "remote"
         ? "Packs panel loads its own list."

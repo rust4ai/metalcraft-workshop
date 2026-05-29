@@ -18,6 +18,7 @@ use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
 use crate::integration_packs::{PackDetail, PackSummary};
+use crate::keys::{self, KeySummary};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
 use crate::skills::{self, Skill};
@@ -54,6 +55,10 @@ pub trait ProjectConnection: Send + Sync {
     async fn get_api_tool(&self, name: &str) -> anyhow::Result<ApiToolConfig>;
     async fn save_api_tool(&self, name: &str, config: &ApiToolConfig) -> anyhow::Result<()>;
     async fn delete_api_tool(&self, name: &str) -> anyhow::Result<()>;
+
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>>;
+    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()>;
+    async fn delete_key(&self, name: &str) -> anyhow::Result<()>;
 
     // Flow templates — readable in both modes; the workshop offers them when
     // the user creates a new flow.
@@ -168,6 +173,16 @@ impl ProjectConnection for LocalConnection {
     }
     async fn delete_api_tool(&self, name: &str) -> anyhow::Result<()> {
         api_tools::delete(&self.root, name)
+    }
+
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>> {
+        Ok(keys::list(&self.root))
+    }
+    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()> {
+        keys::save(&self.root, name, value)
+    }
+    async fn delete_key(&self, name: &str) -> anyhow::Result<()> {
+        keys::delete(&self.root, name)
     }
 
     async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>> {
@@ -295,6 +310,8 @@ struct RemoteSnapshot {
     flows: Vec<metalcraft_flows::FlowSummary>,
     sessions: Vec<diagnostics::DiagnosticsSessionSummary>,
     api_tools: Vec<ApiToolSummary>,
+    #[serde(default)]
+    keys: Vec<KeySummary>,
     layout: RemoteLayout,
 }
 
@@ -336,6 +353,11 @@ struct PutSkillBody<'a> {
     body: &'a str,
 }
 
+#[derive(Serialize)]
+struct PutKeyBody<'a> {
+    value: &'a str,
+}
+
 #[async_trait]
 impl ProjectConnection for RemoteConnection {
     fn mode(&self) -> ConnectionMode {
@@ -353,6 +375,7 @@ impl ProjectConnection for RemoteConnection {
             flows: snap.flows,
             sessions: snap.sessions,
             api_tools: snap.api_tools,
+            keys: snap.keys,
             layout: ProjectLayout {
                 has_personas: !snap.layout.personas_dir.is_empty(),
                 has_skills: !snap.layout.skills_dir.is_empty(),
@@ -528,6 +551,30 @@ impl ProjectConnection for RemoteConnection {
         ok_or_err(
             self.delete(&format!("/api/v1/api-tools/{name}")).send().await?,
             "DELETE api-tool",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>> {
+        let resp = ok_or_err(self.get("/api/v1/keys").send().await?, "GET keys").await?;
+        Ok(resp.json().await?)
+    }
+    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.put(&format!("/api/v1/keys/{name}"))
+                .json(&PutKeyBody { value })
+                .send()
+                .await?,
+            "PUT key",
+        )
+        .await?;
+        Ok(())
+    }
+    async fn delete_key(&self, name: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.delete(&format!("/api/v1/keys/{name}")).send().await?,
+            "DELETE key",
         )
         .await?;
         Ok(())

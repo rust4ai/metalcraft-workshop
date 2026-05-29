@@ -9,6 +9,7 @@ import FlowsView from "./components/FlowsView";
 import ChatsView from "./components/ChatsView";
 import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
+import KeysView from "./components/KeysView";
 import PacksView from "./components/PacksView";
 
 export type Section =
@@ -18,6 +19,7 @@ export type Section =
   | "chats"
   | "sessions"
   | "api_tools"
+  | "keys"
   | "packs";
 
 export default function App() {
@@ -114,6 +116,13 @@ export default function App() {
           )}
           {section === "api_tools" && (
             <ApiToolsView
+              snapshot={snap}
+              selectedName={selectedId}
+              onSelect={setSelectedId}
+            />
+          )}
+          {section === "keys" && (
+            <KeysView
               snapshot={snap}
               selectedName={selectedId}
               onSelect={setSelectedId}

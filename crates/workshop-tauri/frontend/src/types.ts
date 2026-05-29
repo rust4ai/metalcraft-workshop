@@ -143,6 +143,13 @@ export interface ApiToolConfig {
   body_defaults: Record<string, unknown>;
 }
 
+/// A stored API key/secret. The raw value is never sent to the UI — only a
+/// masked preview (e.g. `sb_l…a9b2`).
+export interface KeySummary {
+  name: string;
+  masked: string;
+}
+
 export interface ProjectSnapshot {
   root: string;
   mode: ConnectionMode;
@@ -151,6 +158,7 @@ export interface ProjectSnapshot {
   flows: FlowSummary[];
   sessions: DiagnosticsSessionSummary[];
   api_tools: ApiToolSummary[];
+  keys: KeySummary[];
   layout: ProjectLayout;
 }
 
@@ -160,6 +168,7 @@ export type FileKind =
   | "flow"
   | "diagnostics"
   | "api_tool"
+  | "key"
   | "unknown";
 
 export type WorkshopEvent =

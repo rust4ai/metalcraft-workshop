@@ -14,6 +14,7 @@ use workshop_api::{
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     integration_packs::{PackDetail, PackSummary},
+    keys::KeySummary,
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
@@ -299,6 +300,47 @@ async fn delete_api_tool(
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
     conn.delete_api_tool(&name).await.map_err(|e| e.to_string())
+}
+
+// ---- API keys ----
+
+#[tauri::command]
+async fn list_keys(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<KeySummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_keys().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn save_key(
+    name: String,
+    value: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.save_key(&name, &value)
+        .await
+        .map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Key,
+        id: name,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_key(
+    name: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_key(&name).await.map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Key,
+        id: name,
+    });
+    Ok(())
 }
 
 // ---- Flow templates ----
@@ -649,6 +691,9 @@ fn main() {
             get_api_tool,
             save_api_tool,
             delete_api_tool,
+            list_keys,
+            save_key,
+            delete_key,
             list_flow_templates,
             get_flow_template,
             run_flow,
