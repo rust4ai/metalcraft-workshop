@@ -47,6 +47,12 @@ export function useWorkshop() {
               invoke("refresh_snapshot").catch(console.error);
             }, 250);
             break;
+          case "save_ok":
+            // In local mode the file watcher would catch this, but in remote
+            // mode there is no watcher — refresh explicitly so the sidebar
+            // picks up new/renamed items right away.
+            invoke("refresh_snapshot").catch(console.error);
+            break;
           case "error":
             setLastError(payload.message);
             break;

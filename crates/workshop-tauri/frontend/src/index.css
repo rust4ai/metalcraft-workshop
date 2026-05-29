@@ -21,3 +21,22 @@ html, body, #root {
 pre code {
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
+
+/* React Flow control overrides — dark bg + white icons to match the rest
+   of the app instead of the default white-on-light theme. */
+.react-flow__controls {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+.react-flow__controls-button {
+  background: #18181b;
+  border-bottom: 1px solid #2a2a30;
+  color: #e5e5e5;
+  width: 26px;
+  height: 26px;
+}
+.react-flow__controls-button:hover {
+  background: #27272a;
+}
+.react-flow__controls-button svg {
+  fill: #e5e5e5;
+}

@@ -250,10 +250,12 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
         </ul>
       )}
 
-      {/* Graph + inspector */}
-      <div className="flex-1 flex min-h-0">
-        <div className="flex-1 min-h-0">
-          <ReactFlowProvider>
+      {/* Graph + inspector — wrap both in ReactFlowProvider so the inspector
+          can also use useReactFlow() to place new nodes at the viewport
+          center. */}
+      <ReactFlowProvider>
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 min-h-0">
             <FlowCanvas
               flowId={flow.id}
               nodes={flow.flow.nodes}
@@ -261,37 +263,75 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
               onChange={updateGraph}
               onSelectNode={setSelectedNodeId}
             />
-          </ReactFlowProvider>
+          </div>
+          <NodeInspectorWithRf
+            existingNodes={flow.flow.nodes}
+            node={selectedNode}
+            onChange={(updated) => {
+              const next = flow.flow.nodes.map((n) =>
+                n.id === updated.id ? updated : n,
+              );
+              updateGraph(next, flow.flow.edges);
+            }}
+            onDelete={(nid) => {
+              updateGraph(
+                flow.flow.nodes.filter((n) => n.id !== nid),
+                flow.flow.edges.filter((e) => e.source !== nid && e.target !== nid),
+              );
+              setSelectedNodeId(null);
+            }}
+            onAddNode={(node) => {
+              updateGraph([...flow.flow.nodes, node], flow.flow.edges);
+              setSelectedNodeId(node.id);
+            }}
+          />
         </div>
-        <NodeInspector
-          node={selectedNode}
-          onChange={(updated) => {
-            const next = flow.flow.nodes.map((n) =>
-              n.id === updated.id ? updated : n
-            );
-            updateGraph(next, flow.flow.edges);
-          }}
-          onDelete={(nid) => {
-            updateGraph(
-              flow.flow.nodes.filter((n) => n.id !== nid),
-              flow.flow.edges.filter((e) => e.source !== nid && e.target !== nid)
-            );
-            setSelectedNodeId(null);
-          }}
-          onAddNode={(kind) => {
-            const id = makeId(kind);
-            const node: FlowNode = {
-              id,
-              node_type: kind,
-              data: defaultDataFor(kind),
-              position: [120 + flow.flow.nodes.length * 40, 120],
-            };
-            updateGraph([...flow.flow.nodes, node], flow.flow.edges);
-            setSelectedNodeId(id);
-          }}
-        />
-      </div>
+      </ReactFlowProvider>
     </div>
+  );
+}
+
+/// Thin wrapper that adds viewport-aware node placement on top of
+/// [`NodeInspector`]. Lives inside `ReactFlowProvider` so it can call
+/// `useReactFlow().screenToFlowPosition()`.
+function NodeInspectorWithRf({
+  existingNodes,
+  node,
+  onChange,
+  onDelete,
+  onAddNode,
+}: {
+  existingNodes: FlowNode[];
+  node: FlowNode | null;
+  onChange: (n: FlowNode) => void;
+  onDelete: (id: string) => void;
+  onAddNode: (n: FlowNode) => void;
+}) {
+  const rf = useReactFlow();
+  return (
+    <NodeInspector
+      node={node}
+      onChange={onChange}
+      onDelete={onDelete}
+      onAddNode={(kind) => {
+        const id = makeId(kind);
+        // Drop the new node near the center of whatever the user is
+        // currently looking at, with a small per-add offset so multiple
+        // adds don't stack on top of each other.
+        const center = rf.screenToFlowPosition({
+          x: window.innerWidth / 2,
+          y: window.innerHeight / 2,
+        });
+        const offset = (existingNodes.length % 8) * 30;
+        const node: FlowNode = {
+          id,
+          node_type: kind,
+          data: defaultDataFor(kind),
+          position: [center.x + offset, center.y + offset],
+        };
+        onAddNode(node);
+      }}
+    />
   );
 }
 
@@ -399,6 +439,7 @@ function FlowCanvas({
       onNodeClick={(_, n) => onSelectNode(n.id)}
       onPaneClick={() => onSelectNode(null)}
       fitView
+      proOptions={{ hideAttribution: true }}
     >
       <Background gap={16} color="#222230" />
       <Controls />
