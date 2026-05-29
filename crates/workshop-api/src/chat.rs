@@ -49,10 +49,31 @@ pub enum ChatWireMessage {
 }
 
 /// Wire form for SSE events emitted by `POST /api/v1/chats/{id}/turn`.
+/// Events form a lifecycle: `turn_started` → (`llm_started` →
+/// `llm_completed` → `tool_started`* → `tool_completed`*)+ → `done`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatEvent {
-    Messages { messages: Vec<ChatWireMessage> },
+    TurnStarted {
+        turn_index: usize,
+        user_message: String,
+    },
+    LlmStarted,
+    LlmCompleted {
+        messages: Vec<ChatWireMessage>,
+        duration_ms: u64,
+    },
+    ToolStarted {
+        tool_call_id: String,
+        name: String,
+        args: serde_json::Value,
+    },
+    ToolCompleted {
+        tool_call_id: String,
+        name: String,
+        duration_ms: u64,
+        result: ChatWireMessage,
+    },
     Done {
         status: String,
         #[serde(default)]

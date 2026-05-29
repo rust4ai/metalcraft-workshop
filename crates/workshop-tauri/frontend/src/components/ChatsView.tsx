@@ -84,8 +84,8 @@ function NewChatPanel({
       <div className="w-full max-w-md bg-surface-1 border border-surface-3 rounded p-6 space-y-3">
         <h3 className="text-sm font-semibold text-accent">New chat</h3>
         <p className="text-xs text-gray-400">
-          Spin up an ad-hoc chat against this agent. Chats live for the
-          lifetime of the agent process.
+          Spin up an ad-hoc chat against this agent. Chats are persisted on
+          the agent across restarts.
         </p>
         <label className="block">
           <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
@@ -115,6 +115,33 @@ function NewChatPanel({
   );
 }
 
+// ── Turn-grouped transcript ─────────────────────────────────────────────────
+
+/// An item within a turn. Either an LLM-produced batch of messages or a
+/// tool call (which may still be in-flight).
+type TurnEvent =
+  | { kind: "llm"; messages: ChatWireMessage[]; durationMs?: number }
+  | {
+      kind: "tool";
+      toolCallId: string;
+      name: string;
+      args: unknown;
+      result?: ChatWireMessage;
+      durationMs?: number;
+      startedAt: number;
+    };
+
+interface Turn {
+  index: number;
+  userMessage: string;
+  events: TurnEvent[];
+}
+
+type Activity =
+  | { kind: "llm"; startedAt: number }
+  | { kind: "tool"; name: string; toolCallId: string; startedAt: number }
+  | null;
+
 function ChatTranscript({
   chatId,
   onDelete,
@@ -125,18 +152,20 @@ function ChatTranscript({
   reportError: (ctx: string, e: unknown) => void;
 }) {
   const [detail, setDetail] = useState<ChatDetail | null>(null);
-  const [messages, setMessages] = useState<ChatWireMessage[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [activity, setActivity] = useState<Activity>(null);
   const [status, setStatus] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load chat detail (the persisted server-side messages for this chat).
+  // Load persisted detail and group its messages into historical turns so
+  // reloading a chat shows the same structure as a live conversation.
   useEffect(() => {
     invoke<ChatDetail>("get_chat", { id: chatId })
       .then((d) => {
         setDetail(d);
-        setMessages(d.messages);
+        setTurns(groupHistoricalMessages(d.messages));
       })
       .catch((e) => reportError("get_chat", e));
   }, [chatId, reportError]);
@@ -145,17 +174,60 @@ function ChatTranscript({
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<ChatStreamEvent>("chat-stream", (ev) => {
-      const payload = ev.payload;
-      if (payload.chat_id !== chatId) return;
-      if (payload.kind === "messages") {
-        setMessages((prev) => [...prev, ...payload.messages]);
-      } else if (payload.kind === "done") {
-        setStatus(
-          payload.status === "completed"
-            ? ""
-            : `${payload.status}${payload.reason ? `: ${payload.reason}` : ""}`,
-        );
-        setSending(false);
+      const p = ev.payload;
+      if (p.chat_id !== chatId) return;
+      switch (p.kind) {
+        case "turn_started":
+          setTurns((prev) => [
+            ...prev,
+            { index: p.turn_index, userMessage: p.user_message, events: [] },
+          ]);
+          break;
+        case "llm_started":
+          setActivity({ kind: "llm", startedAt: Date.now() });
+          break;
+        case "llm_completed":
+          setActivity(null);
+          if (p.messages.length > 0) {
+            setTurns((prev) =>
+              appendToLastTurn(prev, {
+                kind: "llm",
+                messages: p.messages,
+                durationMs: p.duration_ms,
+              }),
+            );
+          }
+          break;
+        case "tool_started":
+          setActivity({
+            kind: "tool",
+            name: p.name,
+            toolCallId: p.tool_call_id,
+            startedAt: Date.now(),
+          });
+          setTurns((prev) =>
+            appendToLastTurn(prev, {
+              kind: "tool",
+              toolCallId: p.tool_call_id,
+              name: p.name,
+              args: p.args,
+              startedAt: Date.now(),
+            }),
+          );
+          break;
+        case "tool_completed":
+          setActivity(null);
+          setTurns((prev) => fillToolResult(prev, p.tool_call_id, p.result, p.duration_ms));
+          break;
+        case "done":
+          setActivity(null);
+          setSending(false);
+          setStatus(
+            p.status === "completed"
+              ? ""
+              : `${p.status}${p.reason ? `: ${p.reason}` : ""}`,
+          );
+          break;
       }
     }).then((u) => {
       unlisten = u;
@@ -165,13 +237,13 @@ function ChatTranscript({
     };
   }, [chatId]);
 
-  // Autoscroll on new messages.
+  // Autoscroll on any state change that adds visible content.
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages.length]);
+  }, [turns.length, activity]);
 
   const send = async () => {
     const text = input.trim();
@@ -179,14 +251,12 @@ function ChatTranscript({
     setSending(true);
     setStatus("");
     setInput("");
-    // Optimistically render the user message; the server echoes it back as
-    // the first item in the stream, so we suppress that to avoid duplicates.
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       await invoke("chat_turn", { id: chatId, message: text });
     } catch (e) {
       reportError("chat_turn", e);
       setSending(false);
+      setActivity(null);
     }
   };
 
@@ -199,10 +269,6 @@ function ChatTranscript({
       reportError("delete_chat", e);
     }
   };
-
-  // The server's first echoed user message duplicates our optimistic one.
-  // Collapse consecutive identical user messages.
-  const rendered = dedupeConsecutiveUsers(messages);
 
   return (
     <div className="h-full flex flex-col">
@@ -220,18 +286,12 @@ function ChatTranscript({
         </button>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
-        {rendered.map((m, i) => (
-          <ChatMessageCard key={i} message={m} />
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        {turns.map((turn) => (
+          <TurnCard key={`${turn.index}-${turn.userMessage.slice(0, 20)}`} turn={turn} />
         ))}
-        {sending && (
-          <div className="text-xs text-gray-500 italic">
-            Agent is thinking…
-          </div>
-        )}
-        {status && (
-          <div className="text-xs text-amber-400">⚠ {status}</div>
-        )}
+        {activity && <ActivityIndicator activity={activity} />}
+        {status && <div className="text-xs text-amber-400">⚠ {status}</div>}
       </div>
 
       <div className="px-4 py-3 border-t border-surface-3 bg-surface-1">
@@ -269,35 +329,138 @@ function ChatTranscript({
   );
 }
 
-function ChatMessageCard({ message }: { message: ChatWireMessage }) {
+function TurnCard({ turn }: { turn: Turn }) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1 border-t border-surface-3" />
+        <span className="text-[10px] uppercase tracking-wide text-gray-500 font-mono">
+          Turn {turn.index + 1}
+        </span>
+        <div className="flex-1 border-t border-surface-3" />
+      </div>
+      <div className="space-y-2">
+        <UserMessageCard content={turn.userMessage} />
+        {turn.events.map((ev, i) =>
+          ev.kind === "llm" ? (
+            <LlmCard key={`llm-${i}`} messages={ev.messages} durationMs={ev.durationMs} />
+          ) : (
+            <ToolCard key={`tool-${ev.toolCallId}`} event={ev} />
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UserMessageCard({ content }: { content: string }) {
+  return (
+    <div className="px-3 py-2 bg-surface-2 border-l-2 border-blue-500 rounded text-sm whitespace-pre-wrap">
+      <div className="text-xs uppercase tracking-wide text-blue-400 mb-1">User</div>
+      {content}
+    </div>
+  );
+}
+
+function LlmCard({
+  messages,
+  durationMs,
+}: {
+  messages: ChatWireMessage[];
+  durationMs?: number;
+}) {
+  return (
+    <div className="space-y-2">
+      {messages.map((m, i) => {
+        if (m.role === "assistant") {
+          return (
+            <div
+              key={i}
+              className="px-3 py-2 bg-surface-1 border-l-2 border-accent rounded text-sm whitespace-pre-wrap"
+            >
+              <div className="text-xs uppercase tracking-wide text-accent-light mb-1 flex items-center gap-2">
+                <span>Assistant</span>
+                {durationMs !== undefined && (
+                  <span className="text-gray-500 font-mono normal-case tracking-normal">
+                    {formatDuration(durationMs)}
+                  </span>
+                )}
+              </div>
+              {m.content}
+            </div>
+          );
+        }
+        // Other roles inside an LLM batch are unusual but render generically.
+        return <GenericMessage key={i} message={m} />;
+      })}
+    </div>
+  );
+}
+
+function ToolCard({
+  event,
+}: {
+  event: Extract<TurnEvent, { kind: "tool" }>;
+}) {
+  const pending = event.result === undefined;
+  return (
+    <details
+      className={`px-3 py-2 bg-surface-1 border-l-2 rounded text-xs ${
+        pending
+          ? "border-purple-500 animate-pulse"
+          : "border-green-500"
+      }`}
+    >
+      <summary className="cursor-pointer flex items-center gap-2">
+        <span className={pending ? "text-purple-300" : "text-green-300"}>
+          {pending ? "🔧" : "✓"} {event.name}
+        </span>
+        {pending ? (
+          <LiveTimer startedAt={event.startedAt} />
+        ) : (
+          event.durationMs !== undefined && (
+            <span className="text-gray-500 font-mono">
+              {formatDuration(event.durationMs)}
+            </span>
+          )
+        )}
+      </summary>
+      <div className="mt-1 space-y-1">
+        <div>
+          <div className="text-gray-500 mb-1">args</div>
+          <pre className="font-mono text-gray-400 whitespace-pre-wrap max-h-40 overflow-auto">
+            {JSON.stringify(event.args, null, 2)}
+          </pre>
+        </div>
+        {event.result && event.result.role === "tool_result" && (
+          <div>
+            <div className="text-gray-500 mb-1">result</div>
+            <pre className="font-mono text-gray-400 whitespace-pre-wrap max-h-60 overflow-auto">
+              {event.result.result}
+            </pre>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function GenericMessage({ message }: { message: ChatWireMessage }) {
   switch (message.role) {
     case "user":
-      return (
-        <div className="px-3 py-2 bg-surface-2 border-l-2 border-blue-500 rounded text-sm whitespace-pre-wrap">
-          <div className="text-xs uppercase tracking-wide text-blue-400 mb-1">User</div>
-          {message.content}
-        </div>
-      );
+      return <UserMessageCard content={message.content} />;
     case "assistant":
-      return (
-        <div className="px-3 py-2 bg-surface-1 border-l-2 border-accent rounded text-sm whitespace-pre-wrap">
-          <div className="text-xs uppercase tracking-wide text-accent-light mb-1">Assistant</div>
-          {message.content}
-        </div>
-      );
+      return <LlmCard messages={[message]} />;
     case "tool_call":
       return (
-        <details className="px-3 py-2 bg-surface-1 border-l-2 border-purple-500 rounded text-xs">
-          <summary className="cursor-pointer text-purple-300">🔧 {message.name}</summary>
-          <pre className="mt-1 font-mono text-gray-400 whitespace-pre-wrap max-h-60 overflow-auto">
-            {JSON.stringify(message.args, null, 2)}
-          </pre>
-        </details>
+        <div className="px-3 py-2 bg-surface-1 border-l-2 border-purple-500 rounded text-xs">
+          🔧 {message.name}
+        </div>
       );
     case "tool_result":
       return (
         <details className="px-3 py-2 bg-surface-1 border-l-2 border-green-500 rounded text-xs">
-          <summary className="cursor-pointer text-green-300">↳ {message.name} result</summary>
+          <summary className="text-green-300">↳ {message.name} result</summary>
           <pre className="mt-1 font-mono text-gray-400 whitespace-pre-wrap max-h-60 overflow-auto">
             {message.result}
           </pre>
@@ -306,19 +469,112 @@ function ChatMessageCard({ message }: { message: ChatWireMessage }) {
   }
 }
 
-function dedupeConsecutiveUsers(msgs: ChatWireMessage[]): ChatWireMessage[] {
-  const out: ChatWireMessage[] = [];
-  for (const m of msgs) {
-    const last = out[out.length - 1];
-    if (
-      m.role === "user" &&
-      last &&
-      last.role === "user" &&
-      last.content === m.content
-    ) {
-      continue;
+function ActivityIndicator({ activity }: { activity: NonNullable<Activity> }) {
+  const label =
+    activity.kind === "llm" ? "🧠 Calling LLM…" : `🔧 Running ${activity.name}…`;
+  return (
+    <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light flex items-center gap-2">
+      <span>{label}</span>
+      <LiveTimer startedAt={activity.startedAt} />
+    </div>
+  );
+}
+
+/// Ticks every 100ms while mounted. Cheap enough — it only updates one small
+/// piece of text. Unmounts as soon as the activity (or tool placeholder) clears.
+function LiveTimer({ startedAt }: { startedAt: number }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const i = setInterval(() => force((n) => n + 1), 100);
+    return () => clearInterval(i);
+  }, []);
+  return (
+    <span className="text-gray-500 font-mono">
+      {formatDuration(Date.now() - startedAt)}
+    </span>
+  );
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rem = (s - m * 60).toFixed(0);
+  return `${m}m ${rem}s`;
+}
+
+// ── State helpers ───────────────────────────────────────────────────────────
+
+/// Append a turn event to the most recent turn. No-op if there is no turn
+/// (defensive — TurnStarted is always emitted first by the server).
+function appendToLastTurn(turns: Turn[], event: TurnEvent): Turn[] {
+  if (turns.length === 0) return turns;
+  const last = turns[turns.length - 1];
+  return [
+    ...turns.slice(0, -1),
+    { ...last, events: [...last.events, event] },
+  ];
+}
+
+/// Find the in-flight tool placeholder by id and fill in its result + duration.
+function fillToolResult(
+  turns: Turn[],
+  toolCallId: string,
+  result: ChatWireMessage,
+  durationMs: number,
+): Turn[] {
+  return turns.map((turn) => ({
+    ...turn,
+    events: turn.events.map((ev) =>
+      ev.kind === "tool" && ev.toolCallId === toolCallId
+        ? { ...ev, result, durationMs }
+        : ev,
+    ),
+  }));
+}
+
+/// When loading a persisted chat we get a flat message list. Reconstruct
+/// per-user-message turns by splitting on each `user` role.
+function groupHistoricalMessages(messages: ChatWireMessage[]): Turn[] {
+  const turns: Turn[] = [];
+  let pendingLlm: ChatWireMessage[] = [];
+  const flushLlm = () => {
+    if (pendingLlm.length > 0 && turns.length > 0) {
+      turns[turns.length - 1].events.push({ kind: "llm", messages: pendingLlm });
+      pendingLlm = [];
     }
-    out.push(m);
+  };
+  const callIdToToolEvent = new Map<string, Extract<TurnEvent, { kind: "tool" }>>();
+  for (const m of messages) {
+    if (m.role === "user") {
+      flushLlm();
+      turns.push({
+        index: turns.length,
+        userMessage: m.content,
+        events: [],
+      });
+    } else if (m.role === "assistant") {
+      pendingLlm.push(m);
+    } else if (m.role === "tool_call") {
+      flushLlm();
+      if (turns.length === 0) continue;
+      const ev: Extract<TurnEvent, { kind: "tool" }> = {
+        kind: "tool",
+        toolCallId: m.id,
+        name: m.name,
+        args: m.args,
+        startedAt: 0,
+      };
+      turns[turns.length - 1].events.push(ev);
+      callIdToToolEvent.set(m.id, ev);
+    } else if (m.role === "tool_result") {
+      const ev = callIdToToolEvent.get(m.id);
+      if (ev) {
+        ev.result = m;
+      }
+    }
   }
-  return out;
+  flushLlm();
+  return turns;
 }

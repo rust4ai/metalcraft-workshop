@@ -210,7 +210,17 @@ export interface ChatDetail {
 }
 
 export type ChatEvent =
-  | { kind: "messages"; messages: ChatWireMessage[] }
+  | { kind: "turn_started"; turn_index: number; user_message: string }
+  | { kind: "llm_started" }
+  | { kind: "llm_completed"; messages: ChatWireMessage[]; duration_ms: number }
+  | { kind: "tool_started"; tool_call_id: string; name: string; args: unknown }
+  | {
+      kind: "tool_completed";
+      tool_call_id: string;
+      name: string;
+      duration_ms: number;
+      result: ChatWireMessage;
+    }
   | { kind: "done"; status: string; reason?: string | null };
 
 /// Emitted on the Tauri event bus per streaming chat turn.
