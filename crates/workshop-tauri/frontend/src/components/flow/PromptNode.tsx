@@ -18,6 +18,7 @@ export default function PromptNode({ data, selected }: NodeProps) {
       <Handle
         type="target"
         position={Position.Top}
+        id="default"
         style={{ width: 10, height: 10, background: "#9ca3af", border: "1px solid #6b7280" }}
       />
       <div

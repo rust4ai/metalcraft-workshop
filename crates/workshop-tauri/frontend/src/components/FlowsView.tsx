@@ -395,8 +395,11 @@ function FlowCanvas({
         id: e.id,
         source: e.source,
         target: e.target,
-        sourceHandle: e.source_handle,
-        targetHandle: e.target_handle,
+        // Our single-handle nodes name their port "default" — fall back to
+        // that when the edge JSON doesn't specify a handle (which is the
+        // common case for entry → prompt edges in seed flows).
+        sourceHandle: e.source_handle ?? "default",
+        targetHandle: e.target_handle ?? "default",
       })),
     [edges]
   );

@@ -11,6 +11,7 @@ export default function BranchNode({ data, selected }: NodeProps) {
       <Handle
         type="target"
         position={Position.Top}
+        id="default"
         className="!w-3 !h-3 !bg-gray-500 !border-gray-600"
       />
       <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-3 rounded-t-lg bg-amber-500/10">
