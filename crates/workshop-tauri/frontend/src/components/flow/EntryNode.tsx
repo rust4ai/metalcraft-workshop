@@ -2,46 +2,51 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 export default function EntryNode({ data, selected }: NodeProps) {
   const d = data as Record<string, unknown>;
-  const scheduleType = (d.schedule_type as string) || "manual";
-  const interval = (d.interval as number) || 0;
-  const cron = (d.cron as string) || "";
+  const scheduleType = (d?.schedule_type as string) || "manual";
+  const interval = (d?.interval as number) || 0;
+  const cron = (d?.cron as string) || "";
 
   let label = "Manual";
   if (scheduleType === "minutes") label = `Every ${interval || "?"}m`;
   else if (scheduleType === "hours") label = `Every ${interval || "?"}h`;
   else if (scheduleType === "cron") label = cron ? `cron: ${cron}` : "cron";
 
+  // Inline styles only — Tailwind classes may not be applying inside
+  // React Flow's node renderer for some reason, so we use explicit styles
+  // to guarantee the box is sized and themed.
   return (
     <div
-      className={`rounded-lg border shadow-lg min-w-[200px] bg-surface-1 ${
-        selected ? "border-accent ring-1 ring-accent/50" : "border-surface-3"
-      }`}
+      style={{
+        background: "#12121a",
+        color: "#e5e7eb",
+        border: selected ? "1px solid #d97706" : "1px solid #2a2a35",
+        borderRadius: 8,
+        minWidth: 200,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+        fontFamily: "system-ui, sans-serif",
+      }}
     >
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-surface-3 rounded-t-lg bg-green-500/10">
-        <svg
-          className="w-4 h-4 text-green-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={1.5}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-          />
-        </svg>
-        <span className="text-xs font-medium text-gray-200">Entry</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderBottom: "1px solid #2a2a35",
+          background: "rgba(34,197,94,0.10)",
+          borderRadius: "8px 8px 0 0",
+        }}
+      >
+        <span style={{ color: "#4ade80", fontSize: 14 }}>●</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: "#e5e7eb" }}>Entry</span>
       </div>
-      <div className="px-3 py-2 text-xs text-gray-400">{label}</div>
-      <div className="relative" style={{ height: 12 }}>
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          id="default"
-          className="!w-3 !h-3 !bg-green-500 !border-green-700"
-        />
-      </div>
+      <div style={{ padding: "6px 10px", fontSize: 12, color: "#9ca3af" }}>{label}</div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="default"
+        style={{ width: 10, height: 10, background: "#22c55e", border: "1px solid #166534" }}
+      />
     </div>
   );
 }

@@ -446,24 +446,56 @@ function FlowCanvas({
     [rfEdges, nodes, onChange]
   );
 
+  // DEBUG (temporary): log what the canvas thinks it has so we can tell
+  // whether the issue is (a) missing data, (b) missing render area, or
+  // (c) bad coordinates. Remove once nodes are confirmed visible.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[FlowCanvas]", {
+      flowId,
+      nodeCount: nodes.length,
+      firstNode: nodes[0],
+      rfNodeTypes: Object.keys(NODE_KIND_COMPONENTS),
+    });
+  }, [flowId, nodes]);
+
   return (
-    <ReactFlow
-      nodes={rfNodes}
-      edges={rfEdges}
-      nodeTypes={NODE_KIND_COMPONENTS}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onConnect={onConnect}
-      onNodeClick={(_, n) => onSelectNode(n.id)}
-      onPaneClick={() => onSelectNode(null)}
-      fitView
-      colorMode="dark"
-      proOptions={{ hideAttribution: true }}
-      defaultEdgeOptions={{ animated: true, style: { stroke: "#818cf8" } }}
-    >
-      <Background gap={20} size={1} />
-      <Controls />
-    </ReactFlow>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      {/* Visible badge so we can confirm the canvas area has size at all. */}
+      <div
+        style={{
+          position: "absolute",
+          top: 4,
+          left: 4,
+          zIndex: 10,
+          background: "rgba(0,0,0,0.6)",
+          color: "#fff",
+          padding: "2px 6px",
+          fontSize: 10,
+          fontFamily: "monospace",
+          pointerEvents: "none",
+        }}
+      >
+        nodes={nodes.length} flow={flowId}
+      </div>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        nodeTypes={NODE_KIND_COMPONENTS}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={(_, n) => onSelectNode(n.id)}
+        onPaneClick={() => onSelectNode(null)}
+        fitView
+        colorMode="dark"
+        proOptions={{ hideAttribution: true }}
+        defaultEdgeOptions={{ animated: true, style: { stroke: "#818cf8" } }}
+      >
+        <Background gap={20} size={1} />
+        <Controls />
+      </ReactFlow>
+    </div>
   );
 }
 

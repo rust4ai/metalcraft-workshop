@@ -28,6 +28,19 @@ select, input, textarea {
   color-scheme: dark;
 }
 
+/* DEBUG: defensively force visibility on React Flow nodes. If this fixes
+   the "nodes in DOM but invisible" issue, something in our stylesheet
+   chain is hiding them. */
+.react-flow__node,
+.react-flow__viewport,
+.react-flow__renderer {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+.react-flow__node {
+  z-index: 10 !important;
+}
+
 /* React Flow control overrides — dark bg + white icons to match the rest
    of the app instead of the default white-on-light theme. */
 .react-flow__controls {
