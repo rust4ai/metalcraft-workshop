@@ -22,6 +22,12 @@ pre code {
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
+/* Tell native <select> / <input type="date"> etc. controls to render with
+   the OS dark theme — keeps the dropdown popup readable on dark UIs. */
+select, input, textarea {
+  color-scheme: dark;
+}
+
 /* React Flow control overrides — dark bg + white icons to match the rest
    of the app instead of the default white-on-light theme. */
 .react-flow__controls {

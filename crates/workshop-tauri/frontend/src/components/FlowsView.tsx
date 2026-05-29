@@ -14,10 +14,15 @@ import {
   type EdgeChange,
   type Node,
   type NodeChange,
+  type NodeTypes,
   type OnConnect,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useReportError } from "../hooks/useReportError";
+import EntryNode from "./flow/EntryNode";
+import PromptNode from "./flow/PromptNode";
+import BranchNode from "./flow/BranchNode";
+import BranchToolNode from "./flow/BranchToolNode";
 import type {
   ProjectSnapshot,
   SavedFlow,
@@ -27,6 +32,15 @@ import type {
   FlowTemplateSummary,
   RunFlowResult,
 } from "../types";
+
+// Defined at module scope so React Flow doesn't re-register the types each
+// render — passing a freshly-created object would reset the canvas state.
+const NODE_KIND_COMPONENTS: NodeTypes = {
+  entry: EntryNode,
+  prompt: PromptNode,
+  branch: BranchNode,
+  branch_tool: BranchToolNode,
+};
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -366,9 +380,12 @@ function FlowCanvas({
     () =>
       nodes.map((n) => ({
         id: n.id,
-        type: "default",
+        // Match the node_type to a registered component in
+        // NODE_KIND_COMPONENTS. Unknown kinds fall through to RF's `default`
+        // which renders a basic box.
+        type: n.node_type in NODE_KIND_COMPONENTS ? n.node_type : "default",
         position: { x: n.position[0], y: n.position[1] },
-        data: { label: nodeLabel(n) },
+        data: n.data,
       })),
     [nodes]
   );
@@ -433,15 +450,18 @@ function FlowCanvas({
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
+      nodeTypes={NODE_KIND_COMPONENTS}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
       onNodeClick={(_, n) => onSelectNode(n.id)}
       onPaneClick={() => onSelectNode(null)}
       fitView
+      colorMode="dark"
       proOptions={{ hideAttribution: true }}
+      defaultEdgeOptions={{ animated: true, style: { stroke: "#818cf8" } }}
     >
-      <Background gap={16} color="#222230" />
+      <Background gap={20} size={1} />
       <Controls />
     </ReactFlow>
   );
