@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Background,
@@ -349,6 +349,32 @@ function NodeInspectorWithRf({
   );
 }
 
+// ---- React Flow <-> wire-format conversions ----
+
+function toRfNode(n: FlowNode): Node {
+  return {
+    id: n.id,
+    // Match the node_type to a registered component in NODE_KIND_COMPONENTS.
+    // Unknown kinds fall through to RF's `default` which renders a basic box.
+    type: n.node_type in NODE_KIND_COMPONENTS ? n.node_type : "default",
+    position: { x: n.position[0], y: n.position[1] },
+    data: n.data,
+  };
+}
+
+function toRfEdge(e: FlowEdge): Edge {
+  return {
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    // Our single-handle nodes name their port "default" — fall back to that
+    // when the edge JSON doesn't specify a handle (the common case for
+    // entry → prompt edges in seed flows).
+    sourceHandle: e.source_handle ?? "default",
+    targetHandle: e.target_handle ?? "default",
+  };
+}
+
 function FlowCanvas({
   flowId,
   nodes,
@@ -364,123 +390,144 @@ function FlowCanvas({
 }) {
   const rf = useReactFlow();
 
+  // The canvas owns its React Flow node/edge state rather than deriving it
+  // fresh from props each render. This keeps node object identity stable so
+  // React Flow can retain each node's measured handle bounds — edges are only
+  // drawn once their source/target handles have been measured, so rebuilding
+  // the node array every render (the old approach) left edges with no
+  // endpoints and they never appeared.
+  const [rfNodes, setRfNodes] = useState<Node[]>(() => nodes.map(toRfNode));
+  const [rfEdges, setRfEdges] = useState<Edge[]>(() => edges.map(toRfEdge));
+
+  // Keep refs in sync so change handlers can read the latest arrays without
+  // being torn down/recreated on every edit.
+  const rfNodesRef = useRef(rfNodes);
+  const rfEdgesRef = useRef(rfEdges);
+  rfNodesRef.current = rfNodes;
+  rfEdgesRef.current = rfEdges;
+
+  // Remember each node's original wire `node_type` so unknown/vendor kinds
+  // (which render as "default") round-trip correctly on save.
+  const nodeTypeById = useRef(new Map<string, string>());
+  nodeTypeById.current = new Map(nodes.map((n) => [n.id, n.node_type]));
+
+  const serialize = useCallback(
+    (ns: Node[], es: Edge[]) => {
+      const fnodes: FlowNode[] = ns.map((u) => ({
+        id: u.id,
+        node_type: nodeTypeById.current.get(u.id) ?? (u.type as string) ?? "prompt",
+        data: u.data as Record<string, unknown>,
+        position: [u.position.x, u.position.y],
+      }));
+      const fedges: FlowEdge[] = es.map((u) => ({
+        id: u.id,
+        source: u.source,
+        target: u.target,
+        source_handle: u.sourceHandle ?? undefined,
+        target_handle: u.targetHandle ?? undefined,
+      }));
+      onChange(fnodes, fedges);
+    },
+    [onChange],
+  );
+
+  // Re-seed internal state when the user switches to a different flow. Keyed
+  // on flowId only: edits made through the inspector are merged in by the
+  // reconcile effect below without resetting positions/measurements.
+  useEffect(() => {
+    setRfNodes(nodes.map(toRfNode));
+    setRfEdges(edges.map(toRfEdge));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowId]);
+
+  // Merge inspector-driven changes (node data edits, adds, deletes) from props
+  // into internal state. Existing nodes keep their RF identity + measured
+  // bounds and live position; only `data`/`type` are refreshed when they
+  // actually change, so dragging a node doesn't trigger churn here.
+  useEffect(() => {
+    setRfNodes((cur) => {
+      const byId = new Map(cur.map((n) => [n.id, n]));
+      let changed = cur.length !== nodes.length;
+      const next = nodes.map((n) => {
+        const existing = byId.get(n.id);
+        if (!existing) {
+          changed = true;
+          return toRfNode(n);
+        }
+        const type = n.node_type in NODE_KIND_COMPONENTS ? n.node_type : "default";
+        if (existing.data === n.data && existing.type === type) return existing;
+        changed = true;
+        return { ...existing, type, data: n.data };
+      });
+      return changed ? next : cur;
+    });
+  }, [nodes]);
+
+  useEffect(() => {
+    setRfEdges((cur) => {
+      const byId = new Map(cur.map((e) => [e.id, e]));
+      let changed = cur.length !== edges.length;
+      const next = edges.map((e) => {
+        const existing = byId.get(e.id);
+        const mapped = toRfEdge(e);
+        if (
+          existing &&
+          existing.source === mapped.source &&
+          existing.target === mapped.target &&
+          existing.sourceHandle === mapped.sourceHandle &&
+          existing.targetHandle === mapped.targetHandle
+        ) {
+          return existing;
+        }
+        changed = true;
+        return mapped;
+      });
+      return changed ? next : cur;
+    });
+  }, [edges]);
+
   // React Flow's `fitView` prop only fires on initial mount. When the user
   // switches to a different flow the canvas keeps its old viewport, leaving
   // newly-loaded nodes parked off-screen. Re-fit explicitly when the flow
-  // changes; the rAF + small delay gives RF a tick to measure the new nodes.
+  // changes; the rAF gives RF a tick to measure the new nodes.
   useEffect(() => {
     if (nodes.length === 0) return;
     const tick = requestAnimationFrame(() => {
       rf.fitView({ padding: 0.2, duration: 200 });
     });
     return () => cancelAnimationFrame(tick);
-  }, [flowId, rf, nodes.length]);
-
-  const rfNodes = useMemo<Node[]>(
-    () =>
-      nodes.map((n) => ({
-        id: n.id,
-        // Match the node_type to a registered component in
-        // NODE_KIND_COMPONENTS. Unknown kinds fall through to RF's `default`
-        // which renders a basic box.
-        type: n.node_type in NODE_KIND_COMPONENTS ? n.node_type : "default",
-        position: { x: n.position[0], y: n.position[1] },
-        data: n.data,
-      })),
-    [nodes]
-  );
-  const rfEdges = useMemo<Edge[]>(
-    () =>
-      edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        // Our single-handle nodes name their port "default" — fall back to
-        // that when the edge JSON doesn't specify a handle (which is the
-        // common case for entry → prompt edges in seed flows).
-        sourceHandle: e.source_handle ?? "default",
-        targetHandle: e.target_handle ?? "default",
-      })),
-    [edges]
-  );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowId, rf]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const updated = applyNodeChanges(changes, rfNodes);
-      const merged: FlowNode[] = updated.map((u) => {
-        const orig = nodes.find((n) => n.id === u.id)!;
-        return {
-          ...orig,
-          position: [u.position.x, u.position.y],
-        };
-      });
-      onChange(merged, edges);
+      const next = applyNodeChanges(changes, rfNodesRef.current);
+      setRfNodes(next);
+      serialize(next, rfEdgesRef.current);
     },
-    [rfNodes, nodes, edges, onChange]
+    [serialize],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      const updated = applyEdgeChanges(changes, rfEdges);
-      const merged: FlowEdge[] = updated.map((u) => ({
-        id: u.id,
-        source: u.source,
-        target: u.target,
-        source_handle: u.sourceHandle ?? undefined,
-        target_handle: u.targetHandle ?? undefined,
-      }));
-      onChange(nodes, merged);
+      const next = applyEdgeChanges(changes, rfEdgesRef.current);
+      setRfEdges(next);
+      serialize(rfNodesRef.current, next);
     },
-    [rfEdges, nodes, edges, onChange]
+    [serialize],
   );
 
   const onConnect = useCallback<OnConnect>(
     (conn: Connection) => {
-      const updated = addEdge(conn, rfEdges);
-      const merged: FlowEdge[] = updated.map((u) => ({
-        id: u.id,
-        source: u.source,
-        target: u.target,
-        source_handle: u.sourceHandle ?? undefined,
-        target_handle: u.targetHandle ?? undefined,
-      }));
-      onChange(nodes, merged);
+      const next = addEdge(conn, rfEdgesRef.current);
+      setRfEdges(next);
+      serialize(rfNodesRef.current, next);
     },
-    [rfEdges, nodes, onChange]
+    [serialize],
   );
-
-  // DEBUG (temporary): log what the canvas thinks it has so we can tell
-  // whether the issue is (a) missing data, (b) missing render area, or
-  // (c) bad coordinates. Remove once nodes are confirmed visible.
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log("[FlowCanvas]", {
-      flowId,
-      nodeCount: nodes.length,
-      firstNode: nodes[0],
-      rfNodeTypes: Object.keys(NODE_KIND_COMPONENTS),
-    });
-  }, [flowId, nodes]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      {/* Visible badge so we can confirm the canvas area has size at all. */}
-      <div
-        style={{
-          position: "absolute",
-          top: 4,
-          left: 4,
-          zIndex: 10,
-          background: "rgba(0,0,0,0.6)",
-          color: "#fff",
-          padding: "2px 6px",
-          fontSize: 10,
-          fontFamily: "monospace",
-          pointerEvents: "none",
-        }}
-      >
-        nodes={nodes.length} flow={flowId}
-      </div>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
