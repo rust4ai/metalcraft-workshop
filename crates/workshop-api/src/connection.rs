@@ -13,12 +13,16 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::api_tools::{self, ApiToolConfig, ApiToolSummary};
+use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
+use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
 use crate::skills::{self, Skill};
+use futures_util::stream::Stream;
 use metalcraft_flows::{SavedFlow, ValidationError};
+use std::pin::Pin;
 
 #[async_trait]
 pub trait ProjectConnection: Send + Sync {
@@ -49,6 +53,37 @@ pub trait ProjectConnection: Send + Sync {
     async fn get_api_tool(&self, name: &str) -> anyhow::Result<ApiToolConfig>;
     async fn save_api_tool(&self, name: &str, config: &ApiToolConfig) -> anyhow::Result<()>;
     async fn delete_api_tool(&self, name: &str) -> anyhow::Result<()>;
+
+    // Flow templates — readable in both modes; the workshop offers them when
+    // the user creates a new flow.
+    async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>>;
+    async fn get_flow_template(&self, slug: &str) -> anyhow::Result<FlowTemplate>;
+
+    // Runtime — remote-only because they invoke the agent process. Local
+    // returns an explanatory error.
+    async fn run_flow(
+        &self,
+        id: &str,
+        persona_slug: Option<&str>,
+        model_name: Option<&str>,
+    ) -> anyhow::Result<RunFlowResult>;
+
+    async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>>;
+    async fn get_chat(&self, id: &str) -> anyhow::Result<ChatDetail>;
+    async fn create_chat(
+        &self,
+        persona_slug: &str,
+        model_name: Option<&str>,
+    ) -> anyhow::Result<ChatSummary>;
+    async fn delete_chat(&self, id: &str) -> anyhow::Result<()>;
+
+    /// Start a turn: send a user message and stream back agent events until
+    /// the executor returns. Each item is one decoded SSE event.
+    async fn chat_turn(
+        &self,
+        id: &str,
+        message: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>>;
 }
 
 // ─── Local ──────────────────────────────────────────────────────────────────
@@ -127,6 +162,45 @@ impl ProjectConnection for LocalConnection {
     async fn delete_api_tool(&self, name: &str) -> anyhow::Result<()> {
         api_tools::delete(&self.root, name)
     }
+
+    async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>> {
+        Ok(flow_templates::list(&self.root))
+    }
+    async fn get_flow_template(&self, slug: &str) -> anyhow::Result<FlowTemplate> {
+        flow_templates::load(&self.root, slug)
+    }
+
+    async fn run_flow(
+        &self,
+        _id: &str,
+        _persona_slug: Option<&str>,
+        _model_name: Option<&str>,
+    ) -> anyhow::Result<RunFlowResult> {
+        Err(chat::not_supported_in_local_mode("Run flow"))
+    }
+    async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
+        Err(chat::not_supported_in_local_mode("Chat"))
+    }
+    async fn get_chat(&self, _id: &str) -> anyhow::Result<ChatDetail> {
+        Err(chat::not_supported_in_local_mode("Chat"))
+    }
+    async fn create_chat(
+        &self,
+        _persona_slug: &str,
+        _model_name: Option<&str>,
+    ) -> anyhow::Result<ChatSummary> {
+        Err(chat::not_supported_in_local_mode("Chat"))
+    }
+    async fn delete_chat(&self, _id: &str) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Chat"))
+    }
+    async fn chat_turn(
+        &self,
+        _id: &str,
+        _message: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
+        Err(chat::not_supported_in_local_mode("Chat"))
+    }
 }
 
 // ─── Remote ─────────────────────────────────────────────────────────────────
@@ -172,6 +246,9 @@ impl RemoteConnection {
     }
     fn delete(&self, path: &str) -> reqwest::RequestBuilder {
         self.client.delete(self.url(path)).bearer_auth(&self.api_key)
+    }
+    fn post(&self, path: &str) -> reqwest::RequestBuilder {
+        self.client.post(self.url(path)).bearer_auth(&self.api_key)
     }
 }
 
@@ -435,5 +512,165 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         Ok(())
+    }
+
+    async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/flow-templates").send().await?,
+            "GET flow-templates",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn get_flow_template(&self, slug: &str) -> anyhow::Result<FlowTemplate> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/flow-templates/{slug}")).send().await?,
+            "GET flow-template",
+        )
+        .await?;
+        // Agent returns `{ slug, name, flow: <full SavedFlow doc> }`. Deserialize
+        // straight into our FlowTemplate.
+        Ok(resp.json().await?)
+    }
+
+    async fn run_flow(
+        &self,
+        id: &str,
+        persona_slug: Option<&str>,
+        model_name: Option<&str>,
+    ) -> anyhow::Result<RunFlowResult> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persona_slug: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            model_name: Option<&'a str>,
+        }
+        let resp = ok_or_err(
+            self.post(&format!("/api/v1/flows/{id}/run"))
+                .json(&Body { persona_slug, model_name })
+                .send()
+                .await?,
+            "POST run flow",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
+        let resp = ok_or_err(self.get("/api/v1/chats").send().await?, "GET chats").await?;
+        Ok(resp.json().await?)
+    }
+    async fn get_chat(&self, id: &str) -> anyhow::Result<ChatDetail> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/chats/{id}")).send().await?,
+            "GET chat",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn create_chat(
+        &self,
+        persona_slug: &str,
+        model_name: Option<&str>,
+    ) -> anyhow::Result<ChatSummary> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            persona_slug: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            model_name: Option<&'a str>,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/chats")
+                .json(&Body { persona_slug, model_name })
+                .send()
+                .await?,
+            "POST chat",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn delete_chat(&self, id: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.delete(&format!("/api/v1/chats/{id}")).send().await?,
+            "DELETE chat",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn chat_turn(
+        &self,
+        id: &str,
+        message: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            message: &'a str,
+        }
+        let resp = self
+            .post(&format!("/api/v1/chats/{id}/turn"))
+            .json(&Body { message })
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let msg = resp.text().await.unwrap_or_default();
+            anyhow::bail!("POST chat turn: HTTP {} {}", status, msg);
+        }
+        let byte_stream = resp.bytes_stream();
+        let event_stream = sse_decode(byte_stream);
+        Ok(Box::pin(event_stream))
+    }
+}
+
+// ─── SSE decoder ────────────────────────────────────────────────────────────
+
+/// Convert a stream of raw response bytes into a stream of decoded
+/// [`ChatEvent`]s. We do the minimal SSE parsing needed for our wire
+/// format: `data: <json>` followed by a blank line. Other SSE fields
+/// (`event:`, `id:`, comments starting with `:`) are ignored.
+fn sse_decode<S>(byte_stream: S) -> impl Stream<Item = anyhow::Result<ChatEvent>> + Send
+where
+    S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static,
+{
+    use futures_util::StreamExt;
+    async_stream::try_stream! {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut data_lines: Vec<String> = Vec::new();
+        tokio::pin!(byte_stream);
+        while let Some(chunk) = byte_stream.next().await {
+            let chunk = chunk?;
+            buf.extend_from_slice(&chunk);
+            // Process complete lines (ending in \n; trailing partial line stays in buf).
+            loop {
+                let Some(pos) = buf.iter().position(|b| *b == b'\n') else { break };
+                let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+                let line = std::str::from_utf8(&line_bytes)
+                    .unwrap_or("")
+                    .trim_end_matches(|c| c == '\n' || c == '\r');
+                if line.is_empty() {
+                    // Dispatch one event.
+                    if !data_lines.is_empty() {
+                        let payload = data_lines.join("\n");
+                        data_lines.clear();
+                        let ev: ChatEvent = serde_json::from_str(&payload)
+                            .map_err(|e| anyhow::anyhow!("sse decode: {e}"))?;
+                        yield ev;
+                    }
+                } else if let Some(rest) = line.strip_prefix("data:") {
+                    data_lines.push(rest.trim_start().to_string());
+                }
+                // Other SSE fields ignored.
+            }
+        }
+        // Flush any final event if the server didn't end with a blank line.
+        if !data_lines.is_empty() {
+            let payload = data_lines.join("\n");
+            let ev: ChatEvent = serde_json::from_str(&payload)
+                .map_err(|e| anyhow::anyhow!("sse decode: {e}"))?;
+            yield ev;
+        }
     }
 }

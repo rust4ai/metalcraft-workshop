@@ -9,8 +9,11 @@ use tauri::{Emitter, Manager};
 use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
     api_tools::{ApiToolConfig, ApiToolSummary},
+    chat::{ChatDetail, ChatEvent, ChatSummary, RunFlowResult},
     connection::{LocalConnection, ProjectConnection, RemoteConnection},
-    diagnostics, personas, project, skills,
+    diagnostics,
+    flow_templates::{FlowTemplate, FlowTemplateSummary},
+    personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
 
@@ -297,6 +300,135 @@ async fn delete_api_tool(
     conn.delete_api_tool(&name).await.map_err(|e| e.to_string())
 }
 
+// ---- Flow templates ----
+
+#[tauri::command]
+async fn list_flow_templates(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<FlowTemplateSummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_flow_templates().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_flow_template(
+    slug: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<FlowTemplate, String> {
+    let conn = require_connection(&state)?;
+    conn.get_flow_template(&slug).await.map_err(|e| e.to_string())
+}
+
+// ---- Run flow ----
+
+#[tauri::command]
+async fn run_flow(
+    id: String,
+    persona_slug: Option<String>,
+    model_name: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<RunFlowResult, String> {
+    let conn = require_connection(&state)?;
+    conn.run_flow(&id, persona_slug.as_deref(), model_name.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ---- Chats ----
+
+#[tauri::command]
+async fn list_chats(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<ChatSummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_chats().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_chat(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<ChatDetail, String> {
+    let conn = require_connection(&state)?;
+    conn.get_chat(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_chat(
+    persona_slug: String,
+    model_name: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<ChatSummary, String> {
+    let conn = require_connection(&state)?;
+    conn.create_chat(&persona_slug, model_name.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_chat(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_chat(&id).await.map_err(|e| e.to_string())
+}
+
+/// Event emitted to the frontend during a streaming chat turn. The frontend
+/// subscribes via `listen("chat-stream", ...)` and filters by `chat_id`.
+#[derive(serde::Serialize, Clone)]
+struct ChatStreamEvent {
+    chat_id: String,
+    #[serde(flatten)]
+    event: ChatEvent,
+}
+
+/// Start a streaming chat turn. Each agent step is emitted as a
+/// `chat-stream` event on the frontend's event bus. The command itself
+/// returns when the agent reports its terminal event so the UI can
+/// re-enable the input.
+#[tauri::command]
+async fn chat_turn(
+    id: String,
+    message: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    let conn = require_connection(&state)?;
+    let mut stream = conn
+        .chat_turn(&id, &message)
+        .await
+        .map_err(|e| e.to_string())?;
+    let app_handle = state.app_handle.clone();
+    while let Some(ev) = stream.next().await {
+        match ev {
+            Ok(event) => {
+                let payload = ChatStreamEvent {
+                    chat_id: id.clone(),
+                    event,
+                };
+                if let Err(e) = app_handle.emit("chat-stream", &payload) {
+                    log::error!("chat-stream emit failed: {e}");
+                }
+            }
+            Err(e) => {
+                // Surface decode errors as a synthetic 'done failed' event so
+                // the UI doesn't sit waiting forever.
+                let payload = ChatStreamEvent {
+                    chat_id: id.clone(),
+                    event: ChatEvent::Done {
+                        status: "failed".into(),
+                        reason: Some(e.to_string()),
+                    },
+                };
+                let _ = app_handle.emit("chat-stream", &payload);
+                return Err(e.to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
 // ---- Recents ----
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -478,6 +610,14 @@ fn main() {
             get_api_tool,
             save_api_tool,
             delete_api_tool,
+            list_flow_templates,
+            get_flow_template,
+            run_flow,
+            list_chats,
+            get_chat,
+            create_chat,
+            delete_chat,
+            chat_turn,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");

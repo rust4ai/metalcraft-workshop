@@ -17,7 +17,10 @@ walkdir = "2"
 notify = "6"
 notify-debouncer-mini = "0.4"
 async-trait = "0.1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+async-stream = "0.3"
+bytes = "1"
 
 metalcraft-flows = { git = "https://github.com/rust4ai/metalcraft-flows", rev = "a6e8e2e55853d8138fe0fbf89b6a0fd37877cf1d" }
 

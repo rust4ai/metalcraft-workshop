@@ -161,3 +161,57 @@ export type WorkshopEvent =
 export type RecentEntry =
   | { kind: "local"; path: string }
   | { kind: "remote"; base_url: string; api_key: string };
+
+// ── Flow templates / Run flow / Chat ───────────────────────────────────────
+
+export interface FlowTemplateSummary {
+  slug: string;
+  name: string;
+}
+
+export interface FlowTemplate {
+  slug: string;
+  name: string;
+  flow: SavedFlow;
+}
+
+export interface RunFlowPromptResult {
+  prompt_index: number;
+  status: string; // "completed" | "interrupted" | "failed"
+  answer: string | null;
+  error: string | null;
+}
+
+export interface RunFlowResult {
+  flow_id: string;
+  prompts: RunFlowPromptResult[];
+}
+
+export interface ChatSummary {
+  id: string;
+  persona_slug: string;
+  model_name: string;
+  created_at: string;
+  turn_count: number;
+}
+
+export type ChatWireMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | { role: "tool_call"; id: string; call_id?: string | null; name: string; args: unknown }
+  | { role: "tool_result"; id: string; call_id?: string | null; name: string; result: string };
+
+export interface ChatDetail {
+  id: string;
+  persona_slug: string;
+  model_name: string;
+  created_at: string;
+  messages: ChatWireMessage[];
+}
+
+export type ChatEvent =
+  | { kind: "messages"; messages: ChatWireMessage[] }
+  | { kind: "done"; status: string; reason?: string | null };
+
+/// Emitted on the Tauri event bus per streaming chat turn.
+export type ChatStreamEvent = { chat_id: string } & ChatEvent;

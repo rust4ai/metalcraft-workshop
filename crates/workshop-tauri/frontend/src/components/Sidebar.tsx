@@ -14,6 +14,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "skills", label: "Skills" },
   { id: "flows", label: "Flows" },
   { id: "chats", label: "Chats" },
+  { id: "sessions", label: "Sessions" },
   { id: "api_tools", label: "API tools" },
 ];
 
@@ -78,6 +79,9 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
       {section === "api_tools" && (
         <NewButton onClick={() => onSelect("__new__")} label="+ New API Tool" />
       )}
+      {section === "chats" && (
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Chat" />
+      )}
     </aside>
   );
 }
@@ -106,6 +110,11 @@ function listItems(snap: ProjectSnapshot, s: Section): { id: string; label: stri
         sub: `${f.node_count} nodes${f.enabled ? " • enabled" : ""}`,
       }));
     case "chats":
+      // Live chats are loaded asynchronously by the section view itself,
+      // not from the snapshot. The sidebar list stays empty; the user
+      // creates new ones via the "+ New Chat" button.
+      return [];
+    case "sessions":
       return snap.sessions.map((s) => ({
         id: s.id,
         label: s.timestamp,
@@ -129,6 +138,10 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
     case "flows":
       return snap.layout.has_flows ? "No flows yet." : "flows/ directory not found.";
     case "chats":
+      return snap.mode === "remote"
+        ? "Click + New Chat to start an ad-hoc chat with the agent."
+        : "Live chats require a remote connection to a running agent.";
+    case "sessions":
       return snap.layout.has_logs
         ? "No diagnostics sessions yet."
         : "logs/ directory not found. Run the agent with --diagnostics to generate sessions.";

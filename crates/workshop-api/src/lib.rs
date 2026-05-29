@@ -8,9 +8,11 @@
 //! events.
 
 pub mod api_tools;
+pub mod chat;
 pub mod commands;
 pub mod connection;
 pub mod diagnostics;
+pub mod flow_templates;
 pub mod flows;
 pub mod personas;
 pub mod project;
@@ -18,9 +20,11 @@ pub mod skills;
 pub mod watcher;
 
 pub use api_tools::{ApiToolConfig, ApiToolSummary};
+pub use chat::{ChatDetail, ChatEvent, ChatSummary, ChatWireMessage, RunFlowResult};
 pub use commands::{FileKind, FrontendCommand, WorkshopEvent};
 pub use connection::{LocalConnection, ProjectConnection, RemoteConnection};
 pub use diagnostics::{ChatTimeline, DiagnosticsSessionSummary, TimelineEvent};
+pub use flow_templates::{FlowTemplate, FlowTemplateSummary};
 pub use personas::{Persona, PersonaSummary};
 pub use project::{ConnectionMode, ProjectLayout, ProjectSnapshot, scan_local};
 pub use skills::{Skill, SkillSummary};

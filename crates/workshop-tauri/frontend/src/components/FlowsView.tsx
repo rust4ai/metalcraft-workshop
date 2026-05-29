@@ -8,6 +8,7 @@ import {
   addEdge,
   applyEdgeChanges,
   applyNodeChanges,
+  useReactFlow,
   type Connection,
   type Edge,
   type EdgeChange,
@@ -17,7 +18,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useReportError } from "../hooks/useReportError";
-import type { ProjectSnapshot, SavedFlow, FlowNode, FlowEdge } from "../types";
+import type {
+  ProjectSnapshot,
+  SavedFlow,
+  FlowNode,
+  FlowEdge,
+  FlowTemplate,
+  FlowTemplateSummary,
+  RunFlowResult,
+} from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -32,6 +41,10 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<FlowTemplateSummary[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<RunFlowResult | null>(null);
   const reportError = useReportError();
   const isNew = selectedId === "__new__";
 
@@ -39,18 +52,58 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
     setSavedAt(null);
     setValidationErrors([]);
     setSelectedNodeId(null);
+    setRunResult(null);
     if (!selectedId) {
       setFlow(null);
       return;
     }
     if (isNew) {
-      setFlow(blankFlow());
+      // Show the picker (blank vs template) instead of loading immediately.
+      setFlow(null);
+      setShowPicker(true);
+      invoke<FlowTemplateSummary[]>("list_flow_templates")
+        .then(setTemplates)
+        .catch((e) => reportError("list_flow_templates", e));
       return;
     }
+    setShowPicker(false);
     invoke<SavedFlow>("get_flow", { id: selectedId })
       .then(setFlow)
       .catch((e) => reportError("get_flow", e));
   }, [selectedId, isNew, reportError]);
+
+  // The picker is its own screen — short-circuit before checking `flow`.
+  if (isNew && showPicker) {
+    return (
+      <FlowTemplatePicker
+        templates={templates}
+        onPick={async (slug) => {
+          if (!slug) {
+            setFlow(blankFlow());
+            setShowPicker(false);
+            return;
+          }
+          try {
+            const tpl = await invoke<FlowTemplate>("get_flow_template", { slug });
+            // Reset id/name/timestamps so it saves as a new flow.
+            const now = new Date().toISOString();
+            setFlow({
+              ...tpl.flow,
+              id: `flow-${Math.random().toString(36).slice(2, 8)}`,
+              name: `${tpl.name} (copy)`,
+              created_at: now,
+              updated_at: now,
+              enabled: false,
+            });
+            setShowPicker(false);
+          } catch (e) {
+            reportError("get_flow_template", e);
+          }
+        }}
+        onCancel={() => onSelect(null)}
+      />
+    );
+  }
 
   if (!selectedId) {
     return (
@@ -131,15 +184,63 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
           Save
         </button>
         {!isNew && (
-          <button
-            onClick={remove}
-            className="px-3 py-1 bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs rounded"
-          >
-            Delete
-          </button>
+          <>
+            <button
+              onClick={async () => {
+                setRunning(true);
+                setRunResult(null);
+                try {
+                  const result = await invoke<RunFlowResult>("run_flow", {
+                    id: selectedId,
+                  });
+                  setRunResult(result);
+                } catch (e) {
+                  reportError("run_flow", e);
+                } finally {
+                  setRunning(false);
+                }
+              }}
+              disabled={running}
+              className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded disabled:opacity-40"
+            >
+              {running ? "Running…" : "Run"}
+            </button>
+            <button
+              onClick={remove}
+              className="px-3 py-1 bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs rounded"
+            >
+              Delete
+            </button>
+          </>
         )}
         {savedAt && <span className="text-xs text-green-400">Saved.</span>}
       </div>
+
+      {runResult && (
+        <div className="px-4 py-2 bg-surface-1 border-b border-surface-3 text-xs">
+          <div className="font-semibold mb-1 text-gray-300">
+            Run results — {runResult.prompts.length} prompt(s)
+          </div>
+          <ul className="space-y-1">
+            {runResult.prompts.map((p) => (
+              <li
+                key={p.prompt_index}
+                className={
+                  p.status === "completed"
+                    ? "text-green-300"
+                    : p.status === "interrupted"
+                      ? "text-amber-300"
+                      : "text-red-300"
+                }
+              >
+                <span className="font-mono">[{p.prompt_index}]</span> {p.status}
+                {p.answer && <> — {truncate(p.answer, 200)}</>}
+                {p.error && <> — {truncate(p.error, 200)}</>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {validationErrors.length > 0 && (
         <ul className="px-4 py-2 bg-red-900/30 border-b border-red-900/50 text-xs text-red-200 space-y-0.5">
@@ -154,6 +255,7 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
         <div className="flex-1 min-h-0">
           <ReactFlowProvider>
             <FlowCanvas
+              flowId={flow.id}
               nodes={flow.flow.nodes}
               edges={flow.flow.edges}
               onChange={updateGraph}
@@ -194,16 +296,32 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
 }
 
 function FlowCanvas({
+  flowId,
   nodes,
   edges,
   onChange,
   onSelectNode,
 }: {
+  flowId: string;
   nodes: FlowNode[];
   edges: FlowEdge[];
   onChange: (n: FlowNode[], e: FlowEdge[]) => void;
   onSelectNode: (id: string | null) => void;
 }) {
+  const rf = useReactFlow();
+
+  // React Flow's `fitView` prop only fires on initial mount. When the user
+  // switches to a different flow the canvas keeps its old viewport, leaving
+  // newly-loaded nodes parked off-screen. Re-fit explicitly when the flow
+  // changes; the rAF + small delay gives RF a tick to measure the new nodes.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const tick = requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.2, duration: 200 });
+    });
+    return () => cancelAnimationFrame(tick);
+  }, [flowId, rf, nodes.length]);
+
   const rfNodes = useMemo<Node[]>(
     () =>
       nodes.map((n) => ({
@@ -515,4 +633,58 @@ function nodeLabel(n: FlowNode): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+function FlowTemplatePicker({
+  templates,
+  onPick,
+  onCancel,
+}: {
+  templates: FlowTemplateSummary[];
+  onPick: (slug: string | null) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="h-full flex items-center justify-center p-6">
+      <div className="w-full max-w-md bg-surface-1 border border-surface-3 rounded p-6 space-y-3">
+        <h3 className="text-sm font-semibold text-accent">New flow</h3>
+        <p className="text-xs text-gray-400">
+          Start from a template or build from scratch.
+        </p>
+        <button
+          onClick={() => onPick(null)}
+          className="w-full text-left px-3 py-2 bg-surface-2 hover:bg-surface-3 rounded text-sm"
+        >
+          <div className="font-medium text-gray-200">Blank flow</div>
+          <div className="text-xs text-gray-500">An entry node and nothing else.</div>
+        </button>
+        {templates.length > 0 && (
+          <div className="pt-2 border-t border-surface-3">
+            <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+              From template
+            </div>
+            <ul className="space-y-1">
+              {templates.map((t) => (
+                <li key={t.slug}>
+                  <button
+                    onClick={() => onPick(t.slug)}
+                    className="w-full text-left px-3 py-2 bg-surface-2 hover:bg-surface-3 rounded text-sm"
+                  >
+                    <div className="font-medium text-gray-200">{t.name}</div>
+                    <div className="text-xs text-gray-500 font-mono">{t.slug}</div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button
+          onClick={onCancel}
+          className="text-xs text-gray-500 hover:text-gray-300"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }

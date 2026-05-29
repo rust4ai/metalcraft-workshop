@@ -7,9 +7,10 @@ import PersonasView from "./components/PersonasView";
 import SkillsView from "./components/SkillsView";
 import FlowsView from "./components/FlowsView";
 import ChatsView from "./components/ChatsView";
+import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
 
-export type Section = "personas" | "skills" | "flows" | "chats" | "api_tools";
+export type Section = "personas" | "skills" | "flows" | "chats" | "sessions" | "api_tools";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -91,6 +92,13 @@ export default function App() {
           )}
           {section === "chats" && (
             <ChatsView
+              snapshot={snap}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
+          )}
+          {section === "sessions" && (
+            <SessionsView
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}

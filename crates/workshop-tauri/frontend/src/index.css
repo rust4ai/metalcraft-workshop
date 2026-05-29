@@ -2,9 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
+/* Reset margins, paddings, and box-sizing — but scope it so it doesn't
+   nuke React Flow's internal node padding (which auto-sizes default nodes).
+   `:not([class*="react-flow"])` keeps anything React Flow renders intact. */
+*:not([class*="react-flow"]) {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
