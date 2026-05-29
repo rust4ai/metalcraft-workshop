@@ -39,7 +39,14 @@ export default function SessionsView({ selectedId }: Props) {
   return (
     <div className="h-full overflow-y-auto">
       <header className="px-6 py-4 bg-surface-1 border-b border-surface-3 sticky top-0 z-10">
-        <h2 className="text-sm font-semibold text-accent">{info.timestamp ?? selectedId}</h2>
+        <h2 className="text-sm font-semibold text-accent flex items-center gap-2">
+          {info.kind === "flow" && info.flow_id && (
+            <span className="px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-300 text-xs font-normal">
+              ⚙ flow: {info.flow_id}
+            </span>
+          )}
+          {info.timestamp ?? selectedId}
+        </h2>
         <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
           {info.persona_slug && <span>persona: {info.persona_slug}</span>}
           {info.model_name && <span>model: {info.model_name}</span>}

@@ -484,6 +484,8 @@ impl ProjectConnection for RemoteConnection {
             tools: Vec::new(),
             skills: Vec::new(),
             auto_approve: false,
+            kind: None,
+            flow_id: None,
         });
         let mut events = Vec::new();
         for entry in raw.timeline {

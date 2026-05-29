@@ -144,8 +144,14 @@ function listItems(snap: ProjectSnapshot, s: Section): SidebarItem[] {
     case "sessions":
       return snap.sessions.map((s) => ({
         id: s.id,
-        label: s.timestamp,
-        sub: [s.persona_slug, s.model_name, `${s.turn_count} turns`].filter(Boolean).join(" • "),
+        label: s.kind === "flow" && s.flow_id ? `⚙ ${s.flow_id}` : s.timestamp,
+        sub: [
+          s.kind === "flow" ? s.timestamp : s.persona_slug,
+          s.model_name,
+          `${s.turn_count} turns`,
+        ]
+          .filter(Boolean)
+          .join(" • "),
       }));
     case "api_tools":
       return snap.api_tools.map((t) => ({

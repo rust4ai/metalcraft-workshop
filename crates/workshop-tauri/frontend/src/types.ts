@@ -78,6 +78,10 @@ export interface DiagnosticsSessionSummary {
   persona_name: string | null;
   persona_slug: string | null;
   model_name: string | null;
+  /** "session" for a normal run, "flow" for a flow run. */
+  kind: string | null;
+  /** Present (and kind === "flow") when this session came from a flow run. */
+  flow_id: string | null;
   turn_count: number;
 }
 
@@ -91,6 +95,8 @@ export interface SessionInfo {
   tools: string[];
   skills: string[];
   auto_approve: boolean;
+  kind: string | null;
+  flow_id: string | null;
 }
 
 export type TimelineEvent =
