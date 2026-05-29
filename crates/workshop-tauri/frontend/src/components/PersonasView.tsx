@@ -18,6 +18,12 @@ const BLANK: Persona = {
 };
 
 export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props) {
+  // Look up the snapshot summary to detect pack-owned (read-only) personas.
+  const summary = selectedSlug && selectedSlug !== "__new__"
+    ? snapshot.personas.find((p) => p.slug === selectedSlug)
+    : null;
+  const isReadOnly = !!summary?.read_only;
+  const packId = summary?.pack_id ?? null;
   const [persona, setPersona] = useState<Persona | null>(null);
   const [slugDraft, setSlugDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -133,18 +139,28 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
           />
         </Field>
 
+        {isReadOnly && (
+          <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
+            Read-only — this persona is provided by the{" "}
+            <span className="font-mono">{packId}</span> integration pack.
+            Create a new persona with a different slug to make a variant.
+          </div>
+        )}
         <div className="flex items-center gap-3 pt-4 border-t border-surface-3">
           <button
             onClick={save}
-            disabled={saving || (isNew && !slugDraft.trim())}
+            disabled={saving || isReadOnly || (isNew && !slugDraft.trim())}
             className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
+            title={isReadOnly ? "Pack-owned personas are read-only" : undefined}
           >
             {saving ? "Saving…" : "Save"}
           </button>
           {!isNew && (
             <button
               onClick={remove}
-              className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm"
+              disabled={isReadOnly}
+              className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm disabled:opacity-40"
+              title={isReadOnly ? "Pack-owned personas can't be deleted" : undefined}
             >
               Delete
             </button>

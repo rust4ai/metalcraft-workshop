@@ -9,8 +9,16 @@ import FlowsView from "./components/FlowsView";
 import ChatsView from "./components/ChatsView";
 import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
+import PacksView from "./components/PacksView";
 
-export type Section = "personas" | "skills" | "flows" | "chats" | "sessions" | "api_tools";
+export type Section =
+  | "personas"
+  | "skills"
+  | "flows"
+  | "chats"
+  | "sessions"
+  | "api_tools"
+  | "packs";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -108,6 +116,13 @@ export default function App() {
             <ApiToolsView
               snapshot={snap}
               selectedName={selectedId}
+              onSelect={setSelectedId}
+            />
+          )}
+          {section === "packs" && (
+            <PacksView
+              snapshot={snap}
+              selectedId={selectedId}
               onSelect={setSelectedId}
             />
           )}

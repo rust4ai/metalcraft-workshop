@@ -13,6 +13,7 @@ use workshop_api::{
     connection::{LocalConnection, ProjectConnection, RemoteConnection},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
+    integration_packs::{PackDetail, PackSummary},
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
@@ -429,6 +430,44 @@ async fn chat_turn(
     Ok(())
 }
 
+// ---- Integration packs ----
+
+#[tauri::command]
+async fn list_integration_packs(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<PackSummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_integration_packs().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_integration_pack(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<PackDetail, String> {
+    let conn = require_connection(&state)?;
+    conn.get_integration_pack(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_pack_enabled(
+    id: String,
+    enabled: bool,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.set_pack_enabled(&id, enabled)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Trigger a snapshot refresh so the sidebar/listings update to reflect
+    // newly-available (or newly-hidden) pack content.
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: id.clone(),
+    });
+    Ok(())
+}
+
 // ---- Recents ----
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -618,6 +657,9 @@ fn main() {
             create_chat,
             delete_chat,
             chat_turn,
+            list_integration_packs,
+            get_integration_pack,
+            set_pack_enabled,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");

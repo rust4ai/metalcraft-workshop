@@ -21,7 +21,7 @@ const BLANK: ApiToolConfig = {
   body_defaults: {},
 };
 
-export default function ApiToolsView({ selectedName, onSelect }: Props) {
+export default function ApiToolsView({ snapshot, selectedName, onSelect }: Props) {
   const [config, setConfig] = useState<ApiToolConfig | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -29,6 +29,11 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
   const [parseError, setParseError] = useState<string | null>(null);
   const reportError = useReportError();
   const isNew = selectedName === "__new__";
+  const summary = selectedName && selectedName !== "__new__"
+    ? snapshot.api_tools.find((t) => t.name === selectedName)
+    : null;
+  const isReadOnly = !!summary?.read_only;
+  const packId = summary?.pack_id ?? null;
 
   useEffect(() => {
     setSavedAt(null);
@@ -193,18 +198,27 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
           </div>
         )}
 
+        {isReadOnly && (
+          <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
+            Read-only — provided by the{" "}
+            <span className="font-mono">{packId}</span> integration pack.
+          </div>
+        )}
         <div className="flex items-center gap-3 pt-4 border-t border-surface-3">
           <button
             onClick={save}
-            disabled={saving || (isNew && !nameDraft.trim())}
+            disabled={saving || isReadOnly || (isNew && !nameDraft.trim())}
             className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
+            title={isReadOnly ? "Pack-owned tools are read-only" : undefined}
           >
             {saving ? "Saving…" : "Save"}
           </button>
           {!isNew && (
             <button
               onClick={remove}
-              className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm"
+              disabled={isReadOnly}
+              className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm disabled:opacity-40"
+              title={isReadOnly ? "Pack-owned tools can't be deleted" : undefined}
             >
               Delete
             </button>

@@ -16,6 +16,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "chats", label: "Chats" },
   { id: "sessions", label: "Sessions" },
   { id: "api_tools", label: "API tools" },
+  { id: "packs", label: "Packs" },
 ];
 
 export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect }: Props) {
@@ -56,7 +57,17 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
                       : "hover:bg-surface-2 text-gray-300"
                   }`}
                 >
-                  <div className="text-sm font-medium truncate">{it.label}</div>
+                  <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                    <span className="truncate">{it.label}</span>
+                    {it.packId && (
+                      <span
+                        className="px-1 py-px text-[9px] uppercase tracking-wide bg-accent/20 text-accent-light rounded font-mono"
+                        title={`from '${it.packId}' integration pack — read-only`}
+                      >
+                        {it.packId}
+                      </span>
+                    )}
+                  </div>
                   {it.sub && (
                     <div className="text-xs text-gray-500 truncate">{it.sub}</div>
                   )}
@@ -97,12 +108,31 @@ function NewButton({ onClick, label }: { onClick: () => void; label: string }) {
   );
 }
 
-function listItems(snap: ProjectSnapshot, s: Section): { id: string; label: string; sub?: string }[] {
+interface SidebarItem {
+  id: string;
+  label: string;
+  sub?: string;
+  /// If set, the item is provided by an enabled integration pack and renders
+  /// with a small "pack" chip + slightly dimmed text.
+  packId?: string | null;
+}
+
+function listItems(snap: ProjectSnapshot, s: Section): SidebarItem[] {
   switch (s) {
     case "personas":
-      return snap.personas.map((p) => ({ id: p.slug, label: p.name, sub: p.slug }));
+      return snap.personas.map((p) => ({
+        id: p.slug,
+        label: p.name,
+        sub: p.slug,
+        packId: p.pack_id ?? null,
+      }));
     case "skills":
-      return snap.skills.map((sk) => ({ id: sk.slug, label: sk.slug, sub: sk.description }));
+      return snap.skills.map((sk) => ({
+        id: sk.slug,
+        label: sk.slug,
+        sub: sk.description,
+        packId: sk.pack_id ?? null,
+      }));
     case "flows":
       return snap.flows.map((f) => ({
         id: f.id,
@@ -110,9 +140,6 @@ function listItems(snap: ProjectSnapshot, s: Section): { id: string; label: stri
         sub: `${f.node_count} nodes${f.enabled ? " • enabled" : ""}`,
       }));
     case "chats":
-      // Live chats are loaded asynchronously by the section view itself,
-      // not from the snapshot. The sidebar list stays empty; the user
-      // creates new ones via the "+ New Chat" button.
       return [];
     case "sessions":
       return snap.sessions.map((s) => ({
@@ -125,7 +152,10 @@ function listItems(snap: ProjectSnapshot, s: Section): { id: string; label: stri
         id: t.name,
         label: t.name,
         sub: t.description,
+        packId: t.pack_id ?? null,
       }));
+    case "packs":
+      return [];
   }
 }
 
@@ -149,5 +179,9 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return snap.layout.has_api_tools
         ? "No API tools yet."
         : "api-tools/ directory not found.";
+    case "packs":
+      return snap.mode === "remote"
+        ? "Packs panel loads its own list."
+        : "Integration packs require a remote connection.";
   }
 }

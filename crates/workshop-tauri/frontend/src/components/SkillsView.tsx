@@ -11,13 +11,18 @@ interface Props {
   onSelect: (slug: string | null) => void;
 }
 
-export default function SkillsView({ selectedSlug, onSelect }: Props) {
+export default function SkillsView({ snapshot, selectedSlug, onSelect }: Props) {
   const [skill, setSkill] = useState<Skill | null>(null);
   const [slugDraft, setSlugDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const reportError = useReportError();
   const isNew = selectedSlug === "__new__";
+  const summary = selectedSlug && selectedSlug !== "__new__"
+    ? snapshot.skills.find((s) => s.slug === selectedSlug)
+    : null;
+  const isReadOnly = !!summary?.read_only;
+  const packId = summary?.pack_id ?? null;
 
   useEffect(() => {
     setSavedAt(null);
@@ -125,18 +130,27 @@ export default function SkillsView({ selectedSlug, onSelect }: Props) {
         </div>
       </div>
 
+      {isReadOnly && (
+        <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
+          Read-only — provided by the{" "}
+          <span className="font-mono">{packId}</span> integration pack.
+        </div>
+      )}
       <div className="flex items-center gap-3 pt-3 border-t border-surface-3">
         <button
           onClick={save}
-          disabled={saving || (isNew && !slugDraft.trim())}
+          disabled={saving || isReadOnly || (isNew && !slugDraft.trim())}
           className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
+          title={isReadOnly ? "Pack-owned skills are read-only" : undefined}
         >
           {saving ? "Saving…" : "Save"}
         </button>
         {!isNew && (
           <button
             onClick={remove}
-            className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm"
+            disabled={isReadOnly}
+            className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm disabled:opacity-40"
+            title={isReadOnly ? "Pack-owned skills can't be deleted" : undefined}
           >
             Delete
           </button>

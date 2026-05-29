@@ -11,12 +11,16 @@ use metalcraft_flows::SavedFlow;
 pub struct FlowTemplateSummary {
     pub slug: String,
     pub name: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowTemplate {
     pub slug: String,
     pub name: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
     /// Full `SavedFlow` document — caller clones, mutates the id/name/timestamps,
     /// and saves as a regular flow.
     pub flow: SavedFlow,
@@ -50,7 +54,7 @@ pub fn list(project_root: &Path) -> Vec<FlowTemplateSummary> {
                 .and_then(|v| v.as_str())
                 .unwrap_or(&slug)
                 .to_string();
-            Some(FlowTemplateSummary { slug, name })
+            Some(FlowTemplateSummary { slug, name, pack_id: None })
         })
         .collect();
     out.sort_by(|a, b| a.slug.cmp(&b.slug));
@@ -64,6 +68,7 @@ pub fn load(project_root: &Path, slug: &str) -> anyhow::Result<FlowTemplate> {
     Ok(FlowTemplate {
         slug: slug.to_string(),
         name: flow.name.clone(),
+        pack_id: None,
         flow,
     })
 }

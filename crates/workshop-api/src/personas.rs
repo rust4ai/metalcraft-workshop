@@ -20,6 +20,10 @@ pub struct PersonaSummary {
     pub slug: String,
     pub name: String,
     pub description: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 pub fn personas_dir(project_root: &Path) -> std::path::PathBuf {
@@ -47,6 +51,8 @@ pub fn list(project_root: &Path) -> Vec<PersonaSummary> {
                 slug,
                 name: persona.name,
                 description: persona.description,
+                pack_id: None,
+                read_only: false,
             })
         })
         .collect();

@@ -17,6 +17,7 @@ use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
+use crate::integration_packs::{PackDetail, PackSummary};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
 use crate::skills::{self, Skill};
@@ -84,6 +85,12 @@ pub trait ProjectConnection: Send + Sync {
         id: &str,
         message: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>>;
+
+    // Integration packs — remote-only. Pack state is managed by the agent
+    // process (lives in `<data>/integration_packs.json`), not the workshop.
+    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>>;
+    async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail>;
+    async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
 }
 
 // ─── Local ──────────────────────────────────────────────────────────────────
@@ -200,6 +207,16 @@ impl ProjectConnection for LocalConnection {
         _message: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
         Err(chat::not_supported_in_local_mode("Chat"))
+    }
+
+    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {
+        Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+    async fn get_integration_pack(&self, _id: &str) -> anyhow::Result<PackDetail> {
+        Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+    async fn set_pack_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Integration packs"))
     }
 }
 
@@ -622,6 +639,38 @@ impl ProjectConnection for RemoteConnection {
         let byte_stream = resp.bytes_stream();
         let event_stream = sse_decode(byte_stream);
         Ok(Box::pin(event_stream))
+    }
+
+    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/integration-packs").send().await?,
+            "GET integration-packs",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/integration-packs/{id}")).send().await?,
+            "GET integration-pack",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Body {
+            enabled: bool,
+        }
+        ok_or_err(
+            self.put(&format!("/api/v1/integration-packs/{id}/enabled"))
+                .json(&Body { enabled })
+                .send()
+                .await?,
+            "PUT pack enabled",
+        )
+        .await?;
+        Ok(())
     }
 }
 

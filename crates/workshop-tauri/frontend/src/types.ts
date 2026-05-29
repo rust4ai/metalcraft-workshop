@@ -6,6 +6,8 @@ export interface PersonaSummary {
   slug: string;
   name: string;
   description: string;
+  pack_id?: string | null;
+  read_only?: boolean;
 }
 
 export interface Persona {
@@ -19,12 +21,16 @@ export interface Persona {
 export interface SkillSummary {
   slug: string;
   description: string;
+  pack_id?: string | null;
+  read_only?: boolean;
 }
 
 export interface Skill {
   slug: string;
   description: string;
   body: string;
+  pack_id?: string | null;
+  read_only?: boolean;
 }
 
 export interface FlowSummary {
@@ -115,6 +121,8 @@ export interface ProjectLayout {
 export interface ApiToolSummary {
   name: string;
   description: string;
+  pack_id?: string | null;
+  read_only?: boolean;
 }
 
 export interface ApiToolConfig {
@@ -167,12 +175,42 @@ export type RecentEntry =
 export interface FlowTemplateSummary {
   slug: string;
   name: string;
+  pack_id?: string | null;
 }
 
 export interface FlowTemplate {
   slug: string;
   name: string;
+  pack_id?: string | null;
   flow: SavedFlow;
+}
+
+// ── Integration packs ──────────────────────────────────────────────────────
+
+export interface PackSummary {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  enabled: boolean;
+  personas: number;
+  skills: number;
+  api_tools: number;
+  flow_templates: number;
+  requires_env: string[];
+}
+
+export interface PackDetail {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  enabled: boolean;
+  requires_env: string[];
+  personas: string[];
+  skills: string[];
+  api_tools: string[];
+  flow_templates: string[];
 }
 
 export interface RunFlowPromptResult {

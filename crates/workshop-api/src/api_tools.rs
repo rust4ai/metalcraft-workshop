@@ -27,6 +27,10 @@ pub struct ApiToolConfig {
 pub struct ApiToolSummary {
     pub name: String,
     pub description: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 fn default_body_mapping() -> String {
@@ -56,6 +60,8 @@ pub fn list(project_root: &Path) -> Vec<ApiToolSummary> {
             Some(ApiToolSummary {
                 name: config.name,
                 description: config.description,
+                pack_id: None,
+                read_only: false,
             })
         })
         .collect();

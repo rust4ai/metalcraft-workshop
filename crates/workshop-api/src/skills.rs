@@ -10,12 +10,20 @@ pub struct Skill {
     pub slug: String,
     pub description: String,
     pub body: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillSummary {
     pub slug: String,
     pub description: String,
+    #[serde(default)]
+    pub pack_id: Option<String>,
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 pub fn skills_dir(project_root: &Path) -> std::path::PathBuf {
@@ -40,7 +48,7 @@ pub fn list(project_root: &Path) -> Vec<SkillSummary> {
             let content = std::fs::read_to_string(&path).ok()?;
             let description = parse_frontmatter_description(&content)
                 .unwrap_or_else(|| "Specialized guidance".to_string());
-            Some(SkillSummary { slug, description })
+            Some(SkillSummary { slug, description, pack_id: None, read_only: false })
         })
         .collect();
 
@@ -58,6 +66,8 @@ pub fn load(project_root: &Path, slug: &str) -> anyhow::Result<Skill> {
         slug: slug.to_string(),
         description,
         body,
+        pack_id: None,
+        read_only: false,
     })
 }
 
