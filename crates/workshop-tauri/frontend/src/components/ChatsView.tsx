@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useReportError } from "../hooks/useReportError";
 import type { ChatMessage, ChatTimeline, ProjectSnapshot, TimelineEvent } from "../types";
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 
 export default function ChatsView({ selectedId }: Props) {
   const [timeline, setTimeline] = useState<ChatTimeline | null>(null);
+  const reportError = useReportError();
 
   useEffect(() => {
     if (!selectedId) {
@@ -18,8 +20,8 @@ export default function ChatsView({ selectedId }: Props) {
     }
     invoke<ChatTimeline>("load_diagnostics_session", { id: selectedId })
       .then(setTimeline)
-      .catch((e) => console.error("load_diagnostics_session", e));
-  }, [selectedId]);
+      .catch((e) => reportError("load_diagnostics_session", e));
+  }, [selectedId, reportError]);
 
   if (!selectedId) {
     return (

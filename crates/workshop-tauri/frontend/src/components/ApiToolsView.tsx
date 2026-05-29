@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useReportError } from "../hooks/useReportError";
 import type { ApiToolConfig, ProjectSnapshot } from "../types";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const reportError = useReportError();
   const isNew = selectedName === "__new__";
 
   useEffect(() => {
@@ -43,8 +45,8 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
     setNameDraft(selectedName);
     invoke<ApiToolConfig>("get_api_tool", { name: selectedName })
       .then(setConfig)
-      .catch((e) => console.error("get_api_tool", e));
-  }, [selectedName, isNew]);
+      .catch((e) => reportError("get_api_tool", e));
+  }, [selectedName, isNew, reportError]);
 
   if (!selectedName) {
     return (
@@ -66,7 +68,7 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
       setSavedAt(Date.now());
       if (isNew) onSelect(name);
     } catch (e) {
-      console.error("save_api_tool", e);
+      reportError("save_api_tool", e);
     } finally {
       setSaving(false);
     }
@@ -74,8 +76,12 @@ export default function ApiToolsView({ selectedName, onSelect }: Props) {
 
   const remove = async () => {
     if (isNew || !confirm(`Delete API tool "${selectedName}"?`)) return;
-    await invoke("delete_api_tool", { name: selectedName });
-    onSelect(null);
+    try {
+      await invoke("delete_api_tool", { name: selectedName });
+      onSelect(null);
+    } catch (e) {
+      reportError("delete_api_tool", e);
+    }
   };
 
   return (

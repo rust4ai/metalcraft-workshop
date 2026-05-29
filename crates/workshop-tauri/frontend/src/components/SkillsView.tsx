@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useReportError } from "../hooks/useReportError";
 import type { ProjectSnapshot, Skill } from "../types";
 
 interface Props {
@@ -15,6 +16,7 @@ export default function SkillsView({ selectedSlug, onSelect }: Props) {
   const [slugDraft, setSlugDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const reportError = useReportError();
   const isNew = selectedSlug === "__new__";
 
   useEffect(() => {
@@ -31,8 +33,8 @@ export default function SkillsView({ selectedSlug, onSelect }: Props) {
     setSlugDraft(selectedSlug);
     invoke<Skill>("get_skill", { slug: selectedSlug })
       .then(setSkill)
-      .catch((e) => console.error("get_skill", e));
-  }, [selectedSlug, isNew]);
+      .catch((e) => reportError("get_skill", e));
+  }, [selectedSlug, isNew, reportError]);
 
   if (!selectedSlug) {
     return (
@@ -58,7 +60,7 @@ export default function SkillsView({ selectedSlug, onSelect }: Props) {
       setSavedAt(Date.now());
       if (isNew) onSelect(slug);
     } catch (e) {
-      console.error("save_skill", e);
+      reportError("save_skill", e);
     } finally {
       setSaving(false);
     }
@@ -66,8 +68,12 @@ export default function SkillsView({ selectedSlug, onSelect }: Props) {
 
   const remove = async () => {
     if (isNew || !confirm(`Delete skill "${selectedSlug}"?`)) return;
-    await invoke("delete_skill", { slug: selectedSlug });
-    onSelect(null);
+    try {
+      await invoke("delete_skill", { slug: selectedSlug });
+      onSelect(null);
+    } catch (e) {
+      reportError("delete_skill", e);
+    }
   };
 
   return (

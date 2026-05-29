@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useReportError } from "../hooks/useReportError";
 import type { Persona, ProjectSnapshot } from "../types";
 
 interface Props {
@@ -21,6 +22,7 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
   const [slugDraft, setSlugDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const reportError = useReportError();
   const isNew = selectedSlug === "__new__";
 
   useEffect(() => {
@@ -37,8 +39,8 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
     setSlugDraft(selectedSlug);
     invoke<Persona>("get_persona", { slug: selectedSlug })
       .then(setPersona)
-      .catch((e) => console.error("get_persona", e));
-  }, [selectedSlug, isNew]);
+      .catch((e) => reportError("get_persona", e));
+  }, [selectedSlug, isNew, reportError]);
 
   if (!selectedSlug) {
     return <Empty label="persona" />;
@@ -56,7 +58,7 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
       setSavedAt(Date.now());
       if (isNew) onSelect(slug);
     } catch (e) {
-      console.error("save_persona", e);
+      reportError("save_persona", e);
     } finally {
       setSaving(false);
     }
@@ -64,8 +66,12 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
 
   const remove = async () => {
     if (isNew || !confirm(`Delete persona "${selectedSlug}"?`)) return;
-    await invoke("delete_persona", { slug: selectedSlug });
-    onSelect(null);
+    try {
+      await invoke("delete_persona", { slug: selectedSlug });
+      onSelect(null);
+    } catch (e) {
+      reportError("delete_persona", e);
+    }
   };
 
   return (

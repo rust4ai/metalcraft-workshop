@@ -3,17 +3,31 @@ import type { RecentEntry } from "../types";
 
 interface Props {
   recents: RecentEntry[];
-  onOpen: (path?: string) => void;
-  onOpenRemote: (baseUrl: string, apiKey: string) => void;
+  error: string | null;
+  onOpen: (path?: string) => Promise<void>;
+  onOpenRemote: (baseUrl: string, apiKey: string) => Promise<void>;
 }
 
 type Tab = "local" | "remote";
 
-export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) {
+export default function ProjectPicker({ recents, error, onOpen, onOpenRemote }: Props) {
   const [tab, setTab] = useState<Tab>("local");
   const [path, setPath] = useState("");
   const [baseUrl, setBaseUrl] = useState("http://localhost:3002");
   const [apiKey, setApiKey] = useState("");
+  const [connecting, setConnecting] = useState(false);
+
+  // openProject/openRemote resolve on success (this component then unmounts)
+  // or after catching their own error (which surfaces via the `error` prop).
+  // Either way we clear the pending state so the user isn't stuck.
+  const run = async (fn: () => Promise<void>) => {
+    setConnecting(true);
+    try {
+      await fn();
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   return (
     <div className="h-screen flex items-center justify-center bg-surface-0 text-gray-200">
@@ -33,18 +47,25 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
           </TabButton>
         </div>
 
+        {error && (
+          <div className="mb-4 px-3 py-2 bg-red-900/40 border border-red-900/60 text-sm text-red-200 rounded break-words">
+            {error}
+          </div>
+        )}
+
         {tab === "local" ? (
           <>
             <button
-              onClick={() => onOpen()}
-              className="w-full px-4 py-2 mb-4 bg-accent hover:bg-accent-light text-white rounded font-medium"
+              onClick={() => run(() => onOpen())}
+              disabled={connecting}
+              className="w-full px-4 py-2 mb-4 bg-accent hover:bg-accent-light text-white rounded font-medium disabled:opacity-40"
             >
               Browse for directory…
             </button>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (path.trim()) onOpen(path.trim());
+                if (path.trim()) run(() => onOpen(path.trim()));
               }}
               className="flex gap-2"
             >
@@ -58,7 +79,7 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
               />
               <button
                 type="submit"
-                disabled={!path.trim()}
+                disabled={!path.trim() || connecting}
                 className="px-3 py-2 bg-surface-2 hover:bg-surface-3 text-gray-200 rounded text-sm disabled:opacity-40"
               >
                 Open
@@ -70,7 +91,7 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
             onSubmit={(e) => {
               e.preventDefault();
               if (baseUrl.trim() && apiKey.trim()) {
-                onOpenRemote(baseUrl.trim(), apiKey.trim());
+                run(() => onOpenRemote(baseUrl.trim(), apiKey.trim()));
               }
             }}
             className="space-y-3"
@@ -104,10 +125,10 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
             </label>
             <button
               type="submit"
-              disabled={!baseUrl.trim() || !apiKey.trim()}
+              disabled={!baseUrl.trim() || !apiKey.trim() || connecting}
               className="w-full px-4 py-2 bg-accent hover:bg-accent-light text-white rounded font-medium disabled:opacity-40"
             >
-              Connect
+              {connecting ? "Connecting…" : "Connect"}
             </button>
             <p className="text-xs text-gray-500">
               Start the agent with{" "}
@@ -125,8 +146,9 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
                 <li key={`${r.kind}-${i}`}>
                   {r.kind === "local" ? (
                     <button
-                      onClick={() => onOpen(r.path)}
-                      className="w-full text-left px-2 py-1 text-sm text-gray-300 hover:bg-surface-2 hover:text-accent-light rounded font-mono truncate"
+                      onClick={() => run(() => onOpen(r.path))}
+                      disabled={connecting}
+                      className="w-full text-left px-2 py-1 text-sm text-gray-300 hover:bg-surface-2 hover:text-accent-light rounded font-mono truncate disabled:opacity-40"
                       title={r.path}
                     >
                       <span className="text-xs text-gray-600 mr-2">dir</span>
@@ -134,8 +156,9 @@ export default function ProjectPicker({ recents, onOpen, onOpenRemote }: Props) 
                     </button>
                   ) : (
                     <button
-                      onClick={() => onOpenRemote(r.base_url, r.api_key)}
-                      className="w-full text-left px-2 py-1 text-sm text-gray-300 hover:bg-surface-2 hover:text-accent-light rounded font-mono truncate"
+                      onClick={() => run(() => onOpenRemote(r.base_url, r.api_key))}
+                      disabled={connecting}
+                      className="w-full text-left px-2 py-1 text-sm text-gray-300 hover:bg-surface-2 hover:text-accent-light rounded font-mono truncate disabled:opacity-40"
                       title={r.base_url}
                     >
                       <span className="text-xs text-accent-light mr-2">api</span>

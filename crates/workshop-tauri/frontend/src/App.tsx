@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useWorkshop } from "./hooks/useWorkshop";
+import { ErrorProvider } from "./hooks/useReportError";
 import ProjectPicker from "./components/ProjectPicker";
 import Sidebar from "./components/Sidebar";
 import PersonasView from "./components/PersonasView";
@@ -19,6 +20,7 @@ export default function App() {
     return (
       <ProjectPicker
         recents={workshop.recents}
+        error={workshop.lastError}
         onOpen={(p?: string) => workshop.openProject(p)}
         onOpenRemote={(url, key) => workshop.openRemote(url, key)}
       />
@@ -33,6 +35,7 @@ export default function App() {
       : "bg-surface-2 text-gray-400";
 
   return (
+    <ErrorProvider value={workshop.reportError}>
     <div className="h-screen flex flex-col bg-surface-0 text-gray-200">
       <header className="flex items-center gap-3 px-4 py-2 bg-surface-1 border-b border-surface-3">
         <h1 className="text-sm font-semibold text-accent">Metalcraft Workshop</h1>
@@ -112,5 +115,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </ErrorProvider>
   );
 }

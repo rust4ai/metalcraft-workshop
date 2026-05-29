@@ -16,6 +16,7 @@ import {
   type OnConnect,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useReportError } from "../hooks/useReportError";
 import type { ProjectSnapshot, SavedFlow, FlowNode, FlowEdge } from "../types";
 
 interface Props {
@@ -31,6 +32,7 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const reportError = useReportError();
   const isNew = selectedId === "__new__";
 
   useEffect(() => {
@@ -47,8 +49,8 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
     }
     invoke<SavedFlow>("get_flow", { id: selectedId })
       .then(setFlow)
-      .catch((e) => console.error("get_flow", e));
-  }, [selectedId, isNew]);
+      .catch((e) => reportError("get_flow", e));
+  }, [selectedId, isNew, reportError]);
 
   if (!selectedId) {
     return (
@@ -81,8 +83,12 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
 
   const remove = async () => {
     if (isNew || !confirm(`Delete flow "${selectedId}"?`)) return;
-    await invoke("delete_flow", { id: selectedId });
-    onSelect(null);
+    try {
+      await invoke("delete_flow", { id: selectedId });
+      onSelect(null);
+    } catch (e) {
+      reportError("delete_flow", e);
+    }
   };
 
   const updateFlow = (patch: Partial<SavedFlow>) => setFlow({ ...flow, ...patch });

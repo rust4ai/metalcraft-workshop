@@ -60,6 +60,11 @@ export function useWorkshop() {
     };
   }, []);
 
+  const reportError = useCallback((context: string, error: unknown) => {
+    console.error(context, error);
+    setLastError(`${context}: ${String(error)}`);
+  }, []);
+
   const refreshRecents = useCallback(async () => {
     try {
       const r = await invoke<RecentEntry[]>("list_recents");
@@ -108,6 +113,7 @@ export function useWorkshop() {
     recents,
     lastError,
     clearError: () => setLastError(null),
+    reportError,
     openProject,
     openRemote,
     closeProject,
