@@ -18,7 +18,7 @@ use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
 use crate::integration_packs::{PackDetail, PackSummary};
-use crate::keys::{self, KeySummary};
+use crate::keys::{self, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
 use crate::skills::{self, Skill};
@@ -59,6 +59,10 @@ pub trait ProjectConnection: Send + Sync {
     async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>>;
     async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()>;
     async fn delete_key(&self, name: &str) -> anyhow::Result<()>;
+
+    /// Keys that enabled integration packs declare they need. Remote-only —
+    /// pack state lives on the agent, so local mode returns an empty list.
+    async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>>;
 
     // Flow templates — readable in both modes; the workshop offers them when
     // the user creates a new flow.
@@ -183,6 +187,11 @@ impl ProjectConnection for LocalConnection {
     }
     async fn delete_key(&self, name: &str) -> anyhow::Result<()> {
         keys::delete(&self.root, name)
+    }
+    async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>> {
+        // Recommendations are derived from enabled packs, which live on the
+        // agent — local projects have nothing to recommend.
+        Ok(Vec::new())
     }
 
     async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>> {
@@ -578,6 +587,14 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         Ok(())
+    }
+    async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/keys/recommended").send().await?,
+            "GET recommended keys",
+        )
+        .await?;
+        Ok(resp.json().await?)
     }
 
     async fn list_flow_templates(&self) -> anyhow::Result<Vec<FlowTemplateSummary>> {

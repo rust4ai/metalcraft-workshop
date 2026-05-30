@@ -28,7 +28,7 @@ pub use connection::{LocalConnection, ProjectConnection, RemoteConnection};
 pub use diagnostics::{ChatTimeline, DiagnosticsSessionSummary, TimelineEvent};
 pub use flow_templates::{FlowTemplate, FlowTemplateSummary};
 pub use integration_packs::{PackDetail, PackSummary};
-pub use keys::KeySummary;
+pub use keys::{KeySummary, RecommendedKey};
 pub use personas::{Persona, PersonaSummary};
 pub use project::{ConnectionMode, ProjectLayout, ProjectSnapshot, scan_local};
 pub use skills::{Skill, SkillSummary};

@@ -150,6 +150,14 @@ export interface KeySummary {
   masked: string;
 }
 
+/// A key an enabled integration pack declares it needs (`requires_env`), with
+/// whether it's already configured and which packs want it. Remote-only.
+export interface RecommendedKey {
+  name: string;
+  configured: boolean;
+  packs: string[];
+}
+
 export interface ProjectSnapshot {
   root: string;
   mode: ConnectionMode;

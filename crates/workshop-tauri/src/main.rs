@@ -14,7 +14,7 @@ use workshop_api::{
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     integration_packs::{PackDetail, PackSummary},
-    keys::KeySummary,
+    keys::{KeySummary, RecommendedKey},
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
@@ -341,6 +341,16 @@ async fn delete_key(
         id: name,
     });
     Ok(())
+}
+
+#[tauri::command]
+async fn list_recommended_keys(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<RecommendedKey>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_recommended_keys()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---- Flow templates ----
@@ -694,6 +704,7 @@ fn main() {
             list_keys,
             save_key,
             delete_key,
+            list_recommended_keys,
             list_flow_templates,
             get_flow_template,
             run_flow,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
-import type { ProjectSnapshot } from "../types";
+import type { ProjectSnapshot, RecommendedKey } from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -18,6 +18,9 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
   const [valueDraft, setValueDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  // Name to pre-fill when starting a new key from a recommendation.
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const [recommended, setRecommended] = useState<RecommendedKey[]>([]);
   const reportError = useReportError();
 
   const isNew = selectedName === "__new__";
@@ -29,15 +32,40 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
   useEffect(() => {
     setSavedAt(null);
     setValueDraft("");
-    setNameDraft(isNew ? "" : (selectedName ?? ""));
+    setNameDraft(isNew ? (pendingName ?? "") : (selectedName ?? ""));
+    if (isNew && pendingName) setPendingName(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, isNew]);
+
+  // Refresh recommendations whenever the stored keys change (a save flips a
+  // key's `configured` flag). Remote-only; local mode returns an empty list.
+  useEffect(() => {
+    invoke<RecommendedKey[]>("list_recommended_keys")
+      .then(setRecommended)
+      .catch((e) => reportError("list_recommended_keys", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot.keys]);
+
+  const startNewKey = (name: string) => {
+    setPendingName(name);
+    onSelect("__new__");
+  };
 
   if (!selectedName) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-500 text-sm px-6 text-center">
-        Select a key from the sidebar, or create a new one. Keys back the{" "}
-        <span className="font-mono mx-1">$NAME</span> placeholders used by API
-        tools.
+      <div className="h-full overflow-y-auto p-6">
+        <div className="max-w-2xl space-y-6">
+          <p className="text-sm text-gray-500">
+            Select a key from the sidebar, or create a new one. Keys back the{" "}
+            <span className="font-mono mx-1">$NAME</span> placeholders used by
+            API tools.
+          </p>
+          <RecommendedKeys
+            recommended={recommended}
+            onAdd={startNewKey}
+            onSelect={onSelect}
+          />
+        </div>
       </div>
     );
   }
@@ -135,6 +163,69 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
           {savedAt && <span className="text-xs text-green-400">Saved.</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/// "These enabled packs still need these keys." Configured keys link to their
+/// editor (for rotation); unconfigured ones start a new-key form pre-filled
+/// with the name. Hidden entirely when nothing is recommended (e.g. local mode
+/// or no enabled packs).
+function RecommendedKeys({
+  recommended,
+  onAdd,
+  onSelect,
+}: {
+  recommended: RecommendedKey[];
+  onAdd: (name: string) => void;
+  onSelect: (name: string | null) => void;
+}) {
+  if (recommended.length === 0) return null;
+  return (
+    <div>
+      <h2 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+        Recommended by enabled packs
+      </h2>
+      <ul className="space-y-1.5">
+        {recommended.map((r) => (
+          <li
+            key={r.name}
+            className="flex items-center gap-2 px-3 py-2 bg-surface-1 border border-surface-3 rounded"
+          >
+            <span className="font-mono text-sm text-gray-200 truncate">
+              {r.name}
+            </span>
+            <div className="flex gap-1 flex-wrap">
+              {r.packs.map((p) => (
+                <span
+                  key={p}
+                  className="px-1 py-px text-[9px] uppercase tracking-wide bg-accent/20 text-accent-light rounded font-mono"
+                  title={`required by the '${p}' integration pack`}
+                >
+                  {p}
+                </span>
+              ))}
+            </div>
+            <div className="flex-1" />
+            {r.configured ? (
+              <button
+                onClick={() => onSelect(r.name)}
+                className="text-xs text-green-400 hover:underline whitespace-nowrap"
+                title="Configured — click to rotate the value"
+              >
+                ✓ configured
+              </button>
+            ) : (
+              <button
+                onClick={() => onAdd(r.name)}
+                className="px-2 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded whitespace-nowrap"
+              >
+                + Add value
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
