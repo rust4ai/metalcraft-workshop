@@ -1,4 +1,4 @@
-import type { ProjectSnapshot } from "../types";
+import type { ChatSummary, DiagnosticsSessionSummary, ProjectSnapshot } from "../types";
 import type { Section } from "../App";
 
 interface Props {
@@ -7,6 +7,10 @@ interface Props {
   selectedId: string | null;
   onSection: (s: Section) => void;
   onSelect: (id: string | null) => void;
+  /// Live chat list, fetched from the agent on tab entry (not from snapshot).
+  chats: ChatSummary[];
+  /// Live diagnostics-session list, fetched from the agent on tab entry.
+  sessions: DiagnosticsSessionSummary[];
 }
 
 const SECTIONS: { id: Section; label: string }[] = [
@@ -20,8 +24,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "packs", label: "Packs" },
 ];
 
-export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect }: Props) {
-  const items = listItems(snapshot, section);
+export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect, chats, sessions }: Props) {
+  const items = listItems(snapshot, section, chats, sessions);
 
   return (
     <aside className="w-64 flex flex-col bg-surface-1 border-r border-surface-3">
@@ -121,7 +125,12 @@ interface SidebarItem {
   packId?: string | null;
 }
 
-function listItems(snap: ProjectSnapshot, s: Section): SidebarItem[] {
+function listItems(
+  snap: ProjectSnapshot,
+  s: Section,
+  chats: ChatSummary[],
+  sessions: DiagnosticsSessionSummary[],
+): SidebarItem[] {
   switch (s) {
     case "personas":
       return snap.personas.map((p) => ({
@@ -144,9 +153,13 @@ function listItems(snap: ProjectSnapshot, s: Section): SidebarItem[] {
         sub: `${f.node_count} nodes${f.enabled ? " • enabled" : ""}`,
       }));
     case "chats":
-      return [];
+      return chats.map((c) => ({
+        id: c.id,
+        label: c.persona_slug,
+        sub: [c.model_name, `${c.turn_count} turns`].filter(Boolean).join(" • "),
+      }));
     case "sessions":
-      return snap.sessions.map((s) => ({
+      return sessions.map((s) => ({
         id: s.id,
         label: s.kind === "flow" && s.flow_id ? `⚙ ${s.flow_id}` : s.timestamp,
         sub: [

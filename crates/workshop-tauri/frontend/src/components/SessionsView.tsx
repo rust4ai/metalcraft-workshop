@@ -96,6 +96,13 @@ function TimelineEventCard({ event }: { event: TimelineEvent }) {
           🗜 Compaction after turn {event.after_turn}: {event.before_tokens} → {event.after_tokens} tokens
         </div>
       );
+    case "error":
+      return (
+        <div className="px-3 py-2 bg-red-900/40 border border-red-500/60 rounded text-xs text-red-200">
+          <div className="font-semibold mb-1">✗ Turn failed after turn {event.after_turn}</div>
+          <pre className="font-mono whitespace-pre-wrap text-red-300/90">{event.message}</pre>
+        </div>
+      );
   }
 }
 

@@ -83,6 +83,12 @@ pub enum TimelineEvent {
         before_tokens: usize,
         after_tokens: usize,
     },
+    /// A turn that failed. Written by the agent (`error_after_turn_NNN.json`)
+    /// so the failure reason survives past the ephemeral SSE `done` event.
+    Error {
+        after_turn: usize,
+        message: String,
+    },
 }
 
 impl TimelineEvent {
@@ -94,6 +100,9 @@ impl TimelineEvent {
             TimelineEvent::LlmRequest { turn, .. } => (*turn, 1),
             TimelineEvent::ConfigChange { after_turn, .. } => (*after_turn, 2),
             TimelineEvent::Compaction { after_turn, .. } => (*after_turn, 3),
+            // Render the failure last in its turn group so it reads as the
+            // terminal event.
+            TimelineEvent::Error { after_turn, .. } => (*after_turn, 4),
         }
     }
 
@@ -255,6 +264,21 @@ pub fn parse_timeline_entry(name: &str, value: Value) -> Option<TimelineEvent> {
         return Some(TimelineEvent::LlmRequest {
             turn,
             snapshot: value,
+        });
+    }
+
+    // Must precede the generic `_after_turn_` config-change branch below,
+    // which would otherwise swallow this as an "error" config change.
+    if name.starts_with("error_after_turn_") {
+        let after_turn = value.get("after_turn").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let message = value
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no message)")
+            .to_string();
+        return Some(TimelineEvent::Error {
+            after_turn,
+            message,
         });
     }
 

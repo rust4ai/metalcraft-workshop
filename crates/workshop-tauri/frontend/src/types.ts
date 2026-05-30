@@ -103,7 +103,8 @@ export type TimelineEvent =
   | { kind: "turn"; turn: number; messages: ChatMessage[] }
   | { kind: "llm_request"; turn: number; snapshot: unknown }
   | { kind: "config_change"; event: string; after_turn: number; details: unknown }
-  | { kind: "compaction"; after_turn: number; before_tokens: number; after_tokens: number };
+  | { kind: "compaction"; after_turn: number; before_tokens: number; after_tokens: number }
+  | { kind: "error"; after_turn: number; message: string };
 
 export interface ChatTimeline {
   session: SessionInfo;

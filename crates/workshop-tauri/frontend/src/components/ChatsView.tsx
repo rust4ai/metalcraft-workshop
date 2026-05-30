@@ -14,9 +14,12 @@ interface Props {
   snapshot: ProjectSnapshot;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /// Fired when the chat catalog changes (create/delete) or a turn finishes,
+  /// so the parent can refresh the live chat + session lists.
+  onChatsChanged?: () => void;
 }
 
-export default function ChatsView({ snapshot, selectedId, onSelect }: Props) {
+export default function ChatsView({ snapshot, selectedId, onSelect, onChatsChanged }: Props) {
   const reportError = useReportError();
 
   if (snapshot.mode !== "remote") {
@@ -40,14 +43,26 @@ export default function ChatsView({ snapshot, selectedId, onSelect }: Props) {
   }
 
   if (selectedId === "__new__" || selectedId === null) {
-    return <NewChatPanel snapshot={snapshot} onCreated={onSelect} />;
+    return (
+      <NewChatPanel
+        snapshot={snapshot}
+        onCreated={(id) => {
+          onChatsChanged?.();
+          onSelect(id);
+        }}
+      />
+    );
   }
 
   return (
     <ChatTranscript
       key={selectedId}
       chatId={selectedId}
-      onDelete={() => onSelect(null)}
+      onDelete={() => {
+        onChatsChanged?.();
+        onSelect(null);
+      }}
+      onTurnSettled={() => onChatsChanged?.()}
       reportError={reportError}
     />
   );
@@ -145,10 +160,12 @@ type Activity =
 function ChatTranscript({
   chatId,
   onDelete,
+  onTurnSettled,
   reportError,
 }: {
   chatId: string;
   onDelete: () => void;
+  onTurnSettled: () => void;
   reportError: (ctx: string, e: unknown) => void;
 }) {
   const [detail, setDetail] = useState<ChatDetail | null>(null);
@@ -158,6 +175,10 @@ function ChatTranscript({
   const [activity, setActivity] = useState<Activity>(null);
   const [status, setStatus] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Keep the latest callback in a ref so the stream subscription (keyed only
+  // on chatId) can call it without re-subscribing when its identity changes.
+  const onTurnSettledRef = useRef(onTurnSettled);
+  onTurnSettledRef.current = onTurnSettled;
 
   // Load persisted detail and group its messages into historical turns so
   // reloading a chat shows the same structure as a live conversation.
@@ -227,6 +248,10 @@ function ChatTranscript({
               ? ""
               : `${p.status}${p.reason ? `: ${p.reason}` : ""}`,
           );
+          // Turn finished (ok, interrupted, or failed) — the agent has
+          // persisted the chat and written its session turn/error files, so
+          // refresh the sidebar lists.
+          onTurnSettledRef.current();
           break;
       }
     }).then((u) => {

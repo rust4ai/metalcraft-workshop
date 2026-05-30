@@ -2,12 +2,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { ProjectSnapshot, RecentEntry, WorkshopEvent, FileKind } from "../types";
+import type {
+  ChatSummary,
+  DiagnosticsSessionSummary,
+  ProjectSnapshot,
+  RecentEntry,
+  WorkshopEvent,
+  FileKind,
+} from "../types";
 
 export function useWorkshop() {
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [lastError, setLastError] = useState<string | null>(null);
+  // Live lists for the Chats and Sessions tabs. Unlike the rest of the
+  // sidebar (driven by the one-shot snapshot), these reflect agent-side state
+  // that changes outside any workshop save — so they're fetched fresh from the
+  // agent whenever their tab is opened, not read from the snapshot.
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [sessions, setSessions] = useState<DiagnosticsSessionSummary[]>([]);
   const reloadTimer = useRef<number | null>(null);
 
   // Subscribe + bootstrap.
@@ -39,6 +52,8 @@ export function useWorkshop() {
           }
           case "project_closed":
             setSnapshot(null);
+            setChats([]);
+            setSessions([]);
             break;
           case "file_changed":
             // Debounce snapshot reloads so a burst of writes coalesces.
@@ -71,16 +86,26 @@ export function useWorkshop() {
     setLastError(`${context}: ${String(error)}`);
   }, []);
 
-  // Re-fetch the snapshot from the connection. In remote mode there is no
-  // file watcher, so views that reflect agent-side state written outside a
-  // workshop save (e.g. diagnostics sessions produced by a chat run) must ask
-  // for this explicitly — otherwise the sidebar keeps showing the list as it
-  // was at connect time.
-  const refresh = useCallback(async () => {
+  // Ask the agent for the current chat list. The agent reads it straight from
+  // its chats/ directory, so this is always the live catalog.
+  const refreshChats = useCallback(async () => {
     try {
-      await invoke("refresh_snapshot");
+      setChats(await invoke<ChatSummary[]>("list_chats"));
+    } catch {
+      // Local mode (and a disconnected agent) can't list chats — clear rather
+      // than surface a recurring error every time the tab is opened.
+      setChats([]);
+    }
+  }, []);
+
+  // Ask the agent for the current diagnostics-session list. The agent reads it
+  // straight from its sessions/ directory each call.
+  const refreshSessions = useCallback(async () => {
+    try {
+      setSessions(await invoke<DiagnosticsSessionSummary[]>("list_diagnostics_sessions"));
     } catch (e) {
-      console.error("refresh_snapshot", e);
+      console.error("list_diagnostics_sessions", e);
+      setSessions([]);
     }
   }, []);
 
@@ -136,7 +161,10 @@ export function useWorkshop() {
     openProject,
     openRemote,
     closeProject,
-    refresh,
+    chats,
+    sessions,
+    refreshChats,
+    refreshSessions,
   };
 }
 

@@ -75,12 +75,14 @@ export default function App() {
           onSection={(s) => {
             setSection(s);
             setSelectedId(null);
-            // The sessions list reflects agent-side state that the workshop
-            // doesn't write itself (chat/flow runs create session dirs on the
-            // agent). In remote mode nothing pushes those changes, so pull a
-            // fresh snapshot whenever the tab is opened.
-            if (s === "sessions") workshop.refresh();
+            // Chats and Sessions reflect agent-side state written outside any
+            // workshop save, so re-fetch their lists live from the agent each
+            // time the tab is opened rather than trusting the snapshot.
+            if (s === "chats") workshop.refreshChats();
+            if (s === "sessions") workshop.refreshSessions();
           }}
+          chats={workshop.chats}
+          sessions={workshop.sessions}
           onSelect={setSelectedId}
         />
         <main className="flex-1 overflow-hidden">
@@ -110,6 +112,12 @@ export default function App() {
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onChatsChanged={() => {
+                workshop.refreshChats();
+                // A finished/failed turn also appends to the chat's diagnostics
+                // session, so keep that list current too.
+                workshop.refreshSessions();
+              }}
             />
           )}
           {section === "sessions" && (
