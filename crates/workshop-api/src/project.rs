@@ -43,7 +43,7 @@ pub struct ProjectLayout {
     pub has_personas: bool,
     pub has_skills: bool,
     pub has_flows: bool,
-    pub has_logs: bool,
+    pub has_session_logs: bool,
     pub has_api_tools: bool,
 }
 
@@ -61,7 +61,7 @@ pub fn scan_local(root: &Path) -> ProjectSnapshot {
             has_personas: personas::personas_dir(root).is_dir(),
             has_skills: skills::skills_dir(root).is_dir(),
             has_flows: flows::flows_dir(root).is_dir(),
-            has_logs: diagnostics::logs_dir(root).is_dir(),
+            has_session_logs: diagnostics::logs_dir(root).is_dir(),
             has_api_tools: api_tools::api_tools_dir(root).is_dir(),
         },
     }

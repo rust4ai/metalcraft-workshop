@@ -188,7 +188,7 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
         ? "Click + New Chat to start an ad-hoc chat with the agent."
         : "Live chats require a remote connection to a running agent.";
     case "sessions":
-      return snap.layout.has_logs
+      return snap.layout.has_session_logs
         ? "No diagnostics sessions yet."
         : "logs/ directory not found. Run the agent with --diagnostics to generate sessions.";
     case "api_tools":

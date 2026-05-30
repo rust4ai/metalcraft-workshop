@@ -310,6 +310,27 @@ async fn ok_or_err(resp: reqwest::Response, action: &str) -> anyhow::Result<reqw
     anyhow::bail!("{action}: {msg}")
 }
 
+/// Deserialize a response body, but on failure include serde's actual error
+/// (which field, what was expected) plus a snippet of the raw body — and echo
+/// it to stderr so it shows up in the console. Replaces bare `resp.json()?`,
+/// whose error collapses to the useless "error decoding response body".
+async fn decode_json<T: serde::de::DeserializeOwned>(
+    resp: reqwest::Response,
+    action: &str,
+) -> anyhow::Result<T> {
+    let body = resp.text().await?;
+    match serde_json::from_str::<T>(&body) {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            let snippet: String = body.chars().take(800).collect();
+            eprintln!(
+                "[workshop-api] failed to decode {action} response: {err}\n  body: {snippet}"
+            );
+            anyhow::bail!("decoding {action} response failed: {err}")
+        }
+    }
+}
+
 /// Wire shape returned by `GET /api/v1/snapshot` on the agent. Mirrors
 /// `ProjectSnapshot` in `metalcraft-agent/src/workshop_api.rs`.
 #[derive(Deserialize)]
@@ -331,7 +352,7 @@ struct RemoteLayout {
     personas_dir: String,
     skills_dir: String,
     flows_dir: String,
-    logs_dir: String,
+    sessions_dir: String,
     api_tools_dir: String,
 }
 
@@ -375,7 +396,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn snapshot(&self) -> anyhow::Result<ProjectSnapshot> {
         let resp = ok_or_err(self.get("/api/v1/snapshot").send().await?, "GET /snapshot").await?;
-        let snap: RemoteSnapshot = resp.json().await?;
+        let snap: RemoteSnapshot = decode_json(resp, "GET /snapshot").await?;
         Ok(ProjectSnapshot {
             root: self.base_url.clone(),
             mode: ConnectionMode::Remote,
@@ -389,7 +410,7 @@ impl ProjectConnection for RemoteConnection {
                 has_personas: !snap.layout.personas_dir.is_empty(),
                 has_skills: !snap.layout.skills_dir.is_empty(),
                 has_flows: !snap.layout.flows_dir.is_empty(),
-                has_logs: !snap.layout.logs_dir.is_empty(),
+                has_session_logs: !snap.layout.sessions_dir.is_empty(),
                 has_api_tools: !snap.layout.api_tools_dir.is_empty(),
             },
         })

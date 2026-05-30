@@ -120,7 +120,7 @@ export interface ProjectLayout {
   has_personas: boolean;
   has_skills: boolean;
   has_flows: boolean;
-  has_logs: boolean;
+  has_session_logs: boolean;
   has_api_tools: boolean;
 }
 
