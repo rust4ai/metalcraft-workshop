@@ -265,8 +265,16 @@ impl RemoteConnection {
         if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
             anyhow::bail!("base URL must start with http:// or https://");
         }
+        // Bound connection establishment, but NOT total request time. The
+        // `chat_turn` endpoint streams Server-Sent Events for the entire length
+        // of an agent turn, which can run for minutes when the LLM calls a slow
+        // tool (e.g. `solarabase_retrieve` making its own external HTTP request).
+        // A client-wide `.timeout()` aborts that stream mid-flight at the deadline
+        // — surfacing as reqwest's opaque "error decoding response body" — even
+        // though the turn completes and persists fine server-side. The quick CRUD
+        // calls stay bounded via a per-request timeout on the helpers below.
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
+            .connect_timeout(std::time::Duration::from_secs(15))
             .build()?;
         Ok(Self {
             base_url: trimmed.to_string(),
@@ -279,17 +287,33 @@ impl RemoteConnection {
         format!("{}{}", self.base_url, path)
     }
 
+    /// Hard cap for the non-streaming CRUD calls. The streaming `chat_turn`
+    /// request deliberately does NOT go through these helpers (see its note).
+    const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
-        self.client.get(self.url(path)).bearer_auth(&self.api_key)
+        self.client
+            .get(self.url(path))
+            .bearer_auth(&self.api_key)
+            .timeout(Self::REQUEST_TIMEOUT)
     }
     fn put(&self, path: &str) -> reqwest::RequestBuilder {
-        self.client.put(self.url(path)).bearer_auth(&self.api_key)
+        self.client
+            .put(self.url(path))
+            .bearer_auth(&self.api_key)
+            .timeout(Self::REQUEST_TIMEOUT)
     }
     fn delete(&self, path: &str) -> reqwest::RequestBuilder {
-        self.client.delete(self.url(path)).bearer_auth(&self.api_key)
+        self.client
+            .delete(self.url(path))
+            .bearer_auth(&self.api_key)
+            .timeout(Self::REQUEST_TIMEOUT)
     }
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
-        self.client.post(self.url(path)).bearer_auth(&self.api_key)
+        self.client
+            .post(self.url(path))
+            .bearer_auth(&self.api_key)
+            .timeout(Self::REQUEST_TIMEOUT)
     }
 }
 
@@ -713,8 +737,13 @@ impl ProjectConnection for RemoteConnection {
         struct Body<'a> {
             message: &'a str,
         }
+        // NB: built inline rather than via `self.post()` on purpose — the
+        // streaming turn must NOT carry the per-request timeout, or a turn that
+        // runs longer than that deadline gets its SSE stream killed mid-flight.
         let resp = self
-            .post(&format!("/api/v1/chats/{id}/turn"))
+            .client
+            .post(self.url(&format!("/api/v1/chats/{id}/turn")))
+            .bearer_auth(&self.api_key)
             .json(&Body { message })
             .send()
             .await?;
@@ -763,6 +792,22 @@ impl ProjectConnection for RemoteConnection {
 
 // ─── SSE decoder ────────────────────────────────────────────────────────────
 
+/// Flatten an error and its whole `source()` chain into one string. reqwest's
+/// own `Display` collapses to terse, unhelpful phrases like "error decoding
+/// response body" — the real cause (a timeout, a connection reset, an early
+/// EOF) only appears further down the chain. Used so stream failures carry the
+/// actual reason instead of the opaque top-level message.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut out = err.to_string();
+    let mut src = err.source();
+    while let Some(e) = src {
+        out.push_str(": ");
+        out.push_str(&e.to_string());
+        src = e.source();
+    }
+    out
+}
+
 /// Convert a stream of raw response bytes into a stream of decoded
 /// [`ChatEvent`]s. We do the minimal SSE parsing needed for our wire
 /// format: `data: <json>` followed by a blank line. Other SSE fields
@@ -777,7 +822,9 @@ where
         let mut data_lines: Vec<String> = Vec::new();
         tokio::pin!(byte_stream);
         while let Some(chunk) = byte_stream.next().await {
-            let chunk = chunk?;
+            let chunk = chunk.map_err(|e| {
+                anyhow::anyhow!("chat stream transport error: {}", error_chain(&e))
+            })?;
             buf.extend_from_slice(&chunk);
             // Process complete lines (ending in \n; trailing partial line stays in buf).
             loop {
@@ -792,7 +839,10 @@ where
                         let payload = data_lines.join("\n");
                         data_lines.clear();
                         let ev: ChatEvent = serde_json::from_str(&payload)
-                            .map_err(|e| anyhow::anyhow!("sse decode: {e}"))?;
+                            .map_err(|e| anyhow::anyhow!(
+                                "sse decode failed: {e}; payload: {}",
+                                payload.chars().take(400).collect::<String>()
+                            ))?;
                         yield ev;
                     }
                 } else if let Some(rest) = line.strip_prefix("data:") {
@@ -805,7 +855,10 @@ where
         if !data_lines.is_empty() {
             let payload = data_lines.join("\n");
             let ev: ChatEvent = serde_json::from_str(&payload)
-                .map_err(|e| anyhow::anyhow!("sse decode: {e}"))?;
+                .map_err(|e| anyhow::anyhow!(
+                    "sse decode failed: {e}; payload: {}",
+                    payload.chars().take(400).collect::<String>()
+                ))?;
             yield ev;
         }
     }

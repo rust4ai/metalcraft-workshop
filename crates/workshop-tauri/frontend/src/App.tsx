@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWorkshop } from "./hooks/useWorkshop";
 import { ErrorProvider } from "./hooks/useReportError";
 import ProjectPicker from "./components/ProjectPicker";
@@ -26,6 +26,15 @@ export default function App() {
   const workshop = useWorkshop();
   const [section, setSection] = useState<Section>("personas");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Auto-dismiss the error toast so a transient failure doesn't sit on screen
+  // forever. It stays clickable/closable for as long as it's shown.
+  const { lastError, clearError } = workshop;
+  useEffect(() => {
+    if (!lastError) return;
+    const t = window.setTimeout(clearError, 5000);
+    return () => window.clearTimeout(t);
+  }, [lastError, clearError]);
 
   if (!workshop.snapshot) {
     return (
@@ -152,11 +161,17 @@ export default function App() {
       </div>
 
       {workshop.lastError && (
-        <div
-          className="absolute bottom-4 right-4 max-w-md px-3 py-2 bg-red-900/90 text-red-100 text-sm rounded shadow-lg cursor-pointer"
-          onClick={workshop.clearError}
-        >
-          {workshop.lastError}
+        <div className="absolute bottom-4 right-4 max-w-md flex items-start gap-2 px-3 py-2 bg-red-900/90 text-red-100 text-sm rounded shadow-lg">
+          <pre className="flex-1 whitespace-pre-wrap break-words font-sans max-h-48 overflow-auto m-0">
+            {workshop.lastError}
+          </pre>
+          <button
+            className="shrink-0 text-red-300 hover:text-red-100 leading-none"
+            title="Dismiss"
+            onClick={workshop.clearError}
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

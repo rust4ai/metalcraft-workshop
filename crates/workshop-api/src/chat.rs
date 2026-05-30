@@ -57,6 +57,11 @@ pub enum ChatEvent {
     TurnStarted {
         turn_index: usize,
         user_message: String,
+        /// Diagnostics session id (directory name) this turn logs to, so the UI
+        /// can deep-link a turn error to its session logs. `None` when the agent
+        /// has no active logger for the chat.
+        #[serde(default)]
+        session_id: Option<String>,
     },
     LlmStarted,
     LlmCompleted {

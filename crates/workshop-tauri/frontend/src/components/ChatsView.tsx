@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useReportError } from "../hooks/useReportError";
@@ -180,16 +180,29 @@ function ChatTranscript({
   const onTurnSettledRef = useRef(onTurnSettled);
   onTurnSettledRef.current = onTurnSettled;
 
-  // Load persisted detail and group its messages into historical turns so
-  // reloading a chat shows the same structure as a live conversation.
+  // Fetch the agent's persisted copy of the chat and render the transcript
+  // from it. This is the single source of truth: the same grouping is used
+  // for the initial load AND for reconciling after every turn settles, so a
+  // live stream that drops or garbles mid-turn self-heals to the saved state.
+  const loadDetail = useCallback(
+    () =>
+      invoke<ChatDetail>("get_chat", { id: chatId })
+        .then((d) => {
+          setDetail(d);
+          setTurns(groupHistoricalMessages(d.messages));
+        })
+        .catch((e) => reportError("get_chat", e)),
+    [chatId, reportError],
+  );
+  // Hold the latest loader in a ref so the stream subscription (keyed only on
+  // chatId) can reconcile without re-subscribing when the loader identity
+  // changes — same pattern as onTurnSettledRef.
+  const loadDetailRef = useRef(loadDetail);
+  loadDetailRef.current = loadDetail;
+
   useEffect(() => {
-    invoke<ChatDetail>("get_chat", { id: chatId })
-      .then((d) => {
-        setDetail(d);
-        setTurns(groupHistoricalMessages(d.messages));
-      })
-      .catch((e) => reportError("get_chat", e));
-  }, [chatId, reportError]);
+    loadDetail();
+  }, [loadDetail]);
 
   // Subscribe to streaming events filtered by chat id.
   useEffect(() => {
@@ -249,8 +262,10 @@ function ChatTranscript({
               : `${p.status}${p.reason ? `: ${p.reason}` : ""}`,
           );
           // Turn finished (ok, interrupted, or failed) — the agent has
-          // persisted the chat and written its session turn/error files, so
-          // refresh the sidebar lists.
+          // persisted the chat and written its session turn/error files.
+          // Reconcile the transcript against that persisted copy (the stream
+          // is only a best-effort live overlay) and refresh the sidebar lists.
+          loadDetailRef.current();
           onTurnSettledRef.current();
           break;
       }

@@ -465,17 +465,29 @@ async fn chat_turn(
                 }
             }
             Err(e) => {
-                // Surface decode errors as a synthetic 'done failed' event so
-                // the UI doesn't sit waiting forever.
+                // A mid-stream error here is a *transport* failure on the live
+                // SSE feed (a dropped/idle-timed-out connection), NOT proof the
+                // turn failed — the agent runs and persists the turn
+                // independently. Reporting reqwest's opaque "error decoding
+                // response body" as a failed turn is exactly what made a
+                // completed turn look broken until the user reloaded. Instead
+                // emit an `interrupted` terminal: the frontend reconciles the
+                // transcript from the persisted chat on any terminal, so the
+                // real result still appears. Return Ok so no error banner fires.
+                log::warn!(
+                    "chat-stream transport error (reconciling from persisted state): {e}"
+                );
                 let payload = ChatStreamEvent {
                     chat_id: id.clone(),
                     event: ChatEvent::Done {
-                        status: "failed".into(),
-                        reason: Some(e.to_string()),
+                        status: "interrupted".into(),
+                        reason: Some(
+                            "live connection lost — restored from saved state".into(),
+                        ),
                     },
                 };
                 let _ = app_handle.emit("chat-stream", &payload);
-                return Err(e.to_string());
+                return Ok(());
             }
         }
     }
