@@ -71,6 +71,19 @@ export function useWorkshop() {
     setLastError(`${context}: ${String(error)}`);
   }, []);
 
+  // Re-fetch the snapshot from the connection. In remote mode there is no
+  // file watcher, so views that reflect agent-side state written outside a
+  // workshop save (e.g. diagnostics sessions produced by a chat run) must ask
+  // for this explicitly — otherwise the sidebar keeps showing the list as it
+  // was at connect time.
+  const refresh = useCallback(async () => {
+    try {
+      await invoke("refresh_snapshot");
+    } catch (e) {
+      console.error("refresh_snapshot", e);
+    }
+  }, []);
+
   const refreshRecents = useCallback(async () => {
     try {
       const r = await invoke<RecentEntry[]>("list_recents");
@@ -123,6 +136,7 @@ export function useWorkshop() {
     openProject,
     openRemote,
     closeProject,
+    refresh,
   };
 }
 

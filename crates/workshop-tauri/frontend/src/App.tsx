@@ -75,6 +75,11 @@ export default function App() {
           onSection={(s) => {
             setSection(s);
             setSelectedId(null);
+            // The sessions list reflects agent-side state that the workshop
+            // doesn't write itself (chat/flow runs create session dirs on the
+            // agent). In remote mode nothing pushes those changes, so pull a
+            // fresh snapshot whenever the tab is opened.
+            if (s === "sessions") workshop.refresh();
           }}
           onSelect={setSelectedId}
         />

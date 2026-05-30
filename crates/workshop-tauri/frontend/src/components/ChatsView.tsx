@@ -291,7 +291,11 @@ function ChatTranscript({
           <TurnCard key={`${turn.index}-${turn.userMessage.slice(0, 20)}`} turn={turn} />
         ))}
         {activity && <ActivityIndicator activity={activity} />}
-        {status && <div className="text-xs text-amber-400">⚠ {status}</div>}
+        {status && (
+          <div className="text-xs text-amber-400 whitespace-pre-wrap break-words select-text font-mono bg-amber-400/10 border border-amber-400/30 rounded px-2 py-1.5">
+            ⚠ {status}
+          </div>
+        )}
       </div>
 
       <div className="px-4 py-3 border-t border-surface-3 bg-surface-1">
