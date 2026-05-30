@@ -13,6 +13,17 @@ pub struct KeySummary {
     pub masked: String,
 }
 
+/// A key that an enabled integration pack declares it needs (via the pack's
+/// `requires_env`), annotated with whether it's already configured and which
+/// packs want it. Sourced from the agent's `GET /api/v1/keys/recommended` —
+/// local mode has no packs, so the list is empty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecommendedKey {
+    pub name: String,
+    pub configured: bool,
+    pub packs: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct KeyStore {
     #[serde(flatten)]

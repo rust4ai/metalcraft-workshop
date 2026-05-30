@@ -101,7 +101,7 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
           label={isNew ? "Value" : "New value (replaces the stored secret)"}
         >
           <input
-            type="password"
+            type="text"
             value={valueDraft}
             autoComplete="off"
             spellCheck={false}
