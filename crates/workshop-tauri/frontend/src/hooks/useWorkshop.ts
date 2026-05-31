@@ -15,6 +15,9 @@ export function useWorkshop() {
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
   const [recents, setRecents] = useState<RecentEntry[]>([]);
   const [lastError, setLastError] = useState<string | null>(null);
+  // Diagnostics session the current error belongs to, if any — lets the error
+  // banner deep-link to that session's logs.
+  const [lastErrorSessionId, setLastErrorSessionId] = useState<string | null>(null);
   // Live lists for the Chats and Sessions tabs. Unlike the rest of the
   // sidebar (driven by the one-shot snapshot), these reflect agent-side state
   // that changes outside any workshop save — so they're fetched fresh from the
@@ -70,6 +73,7 @@ export function useWorkshop() {
             break;
           case "error":
             setLastError(payload.message);
+            setLastErrorSessionId(null);
             break;
         }
       });
@@ -81,10 +85,14 @@ export function useWorkshop() {
     };
   }, []);
 
-  const reportError = useCallback((context: string, error: unknown) => {
-    console.error(context, error);
-    setLastError(`${context}: ${String(error)}`);
-  }, []);
+  const reportError = useCallback(
+    (context: string, error: unknown, sessionId?: string | null) => {
+      console.error(context, error);
+      setLastError(`${context}: ${String(error)}`);
+      setLastErrorSessionId(sessionId ?? null);
+    },
+    [],
+  );
 
   // Ask the agent for the current chat list. The agent reads it straight from
   // its chats/ directory, so this is always the live catalog.
@@ -156,7 +164,11 @@ export function useWorkshop() {
     snapshot,
     recents,
     lastError,
-    clearError: () => setLastError(null),
+    lastErrorSessionId,
+    clearError: () => {
+      setLastError(null);
+      setLastErrorSessionId(null);
+    },
     reportError,
     openProject,
     openRemote,

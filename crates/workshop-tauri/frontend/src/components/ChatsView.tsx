@@ -166,7 +166,7 @@ function ChatTranscript({
   chatId: string;
   onDelete: () => void;
   onTurnSettled: () => void;
-  reportError: (ctx: string, e: unknown) => void;
+  reportError: (ctx: string, e: unknown, sessionId?: string | null) => void;
 }) {
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -179,6 +179,9 @@ function ChatTranscript({
   // on chatId) can call it without re-subscribing when its identity changes.
   const onTurnSettledRef = useRef(onTurnSettled);
   onTurnSettledRef.current = onTurnSettled;
+  // Diagnostics session the in-flight turn logs to, captured from the
+  // `turn_started` event so a turn failure can deep-link to its session logs.
+  const turnSessionIdRef = useRef<string | null>(null);
 
   // Fetch the agent's persisted copy of the chat and render the transcript
   // from it. This is the single source of truth: the same grouping is used
@@ -212,6 +215,7 @@ function ChatTranscript({
       if (p.chat_id !== chatId) return;
       switch (p.kind) {
         case "turn_started":
+          turnSessionIdRef.current = p.session_id ?? null;
           setTurns((prev) => [
             ...prev,
             { index: p.turn_index, userMessage: p.user_message, events: [] },
@@ -294,7 +298,7 @@ function ChatTranscript({
     try {
       await invoke("chat_turn", { id: chatId, message: text });
     } catch (e) {
-      reportError("chat_turn", e);
+      reportError("chat_turn", e, turnSessionIdRef.current);
       setSending(false);
       setActivity(null);
     }

@@ -272,7 +272,12 @@ export interface ChatDetail {
 }
 
 export type ChatEvent =
-  | { kind: "turn_started"; turn_index: number; user_message: string }
+  | {
+      kind: "turn_started";
+      turn_index: number;
+      user_message: string;
+      session_id?: string | null;
+    }
   | { kind: "llm_started" }
   | { kind: "llm_completed"; messages: ChatWireMessage[]; duration_ms: number }
   | { kind: "tool_started"; tool_call_id: string; name: string; args: unknown }

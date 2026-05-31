@@ -162,9 +162,25 @@ export default function App() {
 
       {workshop.lastError && (
         <div className="absolute bottom-4 right-4 max-w-md flex items-start gap-2 px-3 py-2 bg-red-900/90 text-red-100 text-sm rounded shadow-lg">
-          <pre className="flex-1 whitespace-pre-wrap break-words font-sans max-h-48 overflow-auto m-0">
-            {workshop.lastError}
-          </pre>
+          <div className="flex-1 min-w-0">
+            <pre className="whitespace-pre-wrap break-words font-sans max-h-48 overflow-auto m-0">
+              {workshop.lastError}
+            </pre>
+            {workshop.lastErrorSessionId && (
+              <button
+                className="mt-1 text-xs text-red-200 underline hover:text-red-100"
+                onClick={() => {
+                  const sid = workshop.lastErrorSessionId;
+                  workshop.clearError();
+                  setSelectedId(sid);
+                  setSection("sessions");
+                  workshop.refreshSessions();
+                }}
+              >
+                View session logs ↗
+              </button>
+            )}
+          </div>
           <button
             className="shrink-0 text-red-300 hover:text-red-100 leading-none"
             title="Dismiss"
