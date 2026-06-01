@@ -13,6 +13,7 @@ const BLANK: Persona = {
   name: "",
   description: "",
   tools: [],
+  packs: [],
   skills: [],
   system_prompt: "",
 };

@@ -10,8 +10,19 @@ pub struct Persona {
     pub name: String,
     pub description: String,
     pub tools: Vec<String>,
+    /// Integration packs the persona is scoped to. The workshop doesn't edit
+    /// this, but it must round-trip it — dropping it on save would strip a
+    /// persona's pack-provided tools. Mirrors `metalcraft-agent`.
+    #[serde(default)]
+    pub packs: Vec<String>,
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Seed-persona version driving the agent's force-upgrade-on-startup. The
+    /// workshop doesn't edit it, but must preserve it: dropping it on save
+    /// resets the installed version to "none", so the agent re-seeds and
+    /// clobbers the user's edit on next start. Mirrors `metalcraft-agent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     pub system_prompt: String,
 }
 

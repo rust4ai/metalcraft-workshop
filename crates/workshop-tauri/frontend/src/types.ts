@@ -14,7 +14,11 @@ export interface Persona {
   name: string;
   description: string;
   tools: string[];
+  // Not edited by the workshop form, but carried through so save() doesn't
+  // drop them (packs = pack-scoped tools; version = agent force-upgrade tag).
+  packs?: string[];
   skills: string[];
+  version?: string | null;
   system_prompt: string;
 }
 
