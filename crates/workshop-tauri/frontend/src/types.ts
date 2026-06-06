@@ -241,6 +241,36 @@ export interface PackDetail {
   flow_templates: string[];
 }
 
+// ── Gateway channels ───────────────────────────────────────────────────────
+
+export interface GatewaySettingField {
+  key: string;
+  label: string;
+  input_type: string; // "text" | "tel" | "password" | "number" | "persona" | "model"
+  required: boolean;
+  placeholder?: string | null;
+  help?: string | null;
+}
+
+export interface GatewayType {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  adapter: string;
+  requires_env: string[];
+  settings: GatewaySettingField[];
+}
+
+export interface GatewayChannel {
+  id: string;
+  type_id: string;
+  name: string;
+  enabled: boolean;
+  settings: Record<string, string>;
+  created_at?: string | null;
+}
+
 export interface RunFlowPromptResult {
   prompt_index: number;
   status: string; // "completed" | "interrupted" | "failed"

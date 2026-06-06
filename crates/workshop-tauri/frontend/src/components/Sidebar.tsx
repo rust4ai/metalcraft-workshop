@@ -22,6 +22,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "api_tools", label: "API tools" },
   { id: "keys", label: "Keys" },
   { id: "packs", label: "Packs" },
+  { id: "gateway", label: "Gateway" },
 ];
 
 export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect, chats, sessions }: Props) {
@@ -100,6 +101,9 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
       )}
       {section === "chats" && (
         <NewButton onClick={() => onSelect("__new__")} label="+ New Chat" />
+      )}
+      {section === "gateway" && (
+        <NewButton onClick={() => onSelect("__new__")} label="+ New Channel" />
       )}
     </aside>
   );
@@ -185,6 +189,9 @@ function listItems(
       }));
     case "packs":
       return [];
+    case "gateway":
+      // The Gateway panel fetches and lists its own channels (like Packs).
+      return [];
   }
 }
 
@@ -214,5 +221,9 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return snap.mode === "remote"
         ? "Packs panel loads its own list."
         : "Integration packs require a remote connection.";
+    case "gateway":
+      return snap.mode === "remote"
+        ? "Click + New Channel to configure a gateway channel."
+        : "Gateway channels require a remote connection.";
   }
 }

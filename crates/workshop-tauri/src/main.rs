@@ -13,6 +13,7 @@ use workshop_api::{
     connection::{LocalConnection, ProjectConnection, RemoteConnection},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
+    gateway::{GatewayChannel, GatewayType},
     integration_packs::{PackDetail, PackSummary},
     keys::{KeySummary, RecommendedKey},
     personas, project, skills,
@@ -532,6 +533,79 @@ async fn set_pack_enabled(
     Ok(())
 }
 
+// ---------- Gateway channel commands ----------
+
+#[tauri::command]
+async fn list_gateway_types(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<GatewayType>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_gateway_types().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_gateway_channels(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<GatewayChannel>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_gateway_channels().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_gateway_channel(
+    type_id: String,
+    name: String,
+    settings: std::collections::HashMap<String, String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<GatewayChannel, String> {
+    let conn = require_connection(&state)?;
+    conn.create_gateway_channel(&type_id, &name, settings)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn update_gateway_channel(
+    id: String,
+    name: String,
+    enabled: bool,
+    settings: std::collections::HashMap<String, String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<GatewayChannel, String> {
+    let conn = require_connection(&state)?;
+    conn.update_gateway_channel(&id, &name, enabled, settings)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_gateway_channel_enabled(
+    id: String,
+    enabled: bool,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.set_gateway_channel_enabled(&id, enabled)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Enabling a channel changes which keys are recommended (its type's
+    // requires_env), so nudge the UI to refresh.
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_gateway_channel(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_gateway_channel(&id).await.map_err(|e| e.to_string())
+}
+
 // ---- Recents ----
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -728,6 +802,12 @@ fn main() {
             list_integration_packs,
             get_integration_pack,
             set_pack_enabled,
+            list_gateway_types,
+            list_gateway_channels,
+            create_gateway_channel,
+            update_gateway_channel,
+            set_gateway_channel_enabled,
+            delete_gateway_channel,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");

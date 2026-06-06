@@ -17,7 +17,9 @@ use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
+use crate::gateway::{GatewayChannel, GatewayType};
 use crate::integration_packs::{PackDetail, PackSummary};
+use std::collections::HashMap;
 use crate::keys::{self, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
@@ -100,6 +102,27 @@ pub trait ProjectConnection: Send + Sync {
     async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>>;
     async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail>;
     async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
+
+    // Gateway channels — remote-only, like integration packs. Types are
+    // declarative manifests on the agent; instances live in the agent's
+    // `<data>/gateway_channels.json`.
+    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>>;
+    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>>;
+    async fn create_gateway_channel(
+        &self,
+        type_id: &str,
+        name: &str,
+        settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel>;
+    async fn update_gateway_channel(
+        &self,
+        id: &str,
+        name: &str,
+        enabled: bool,
+        settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel>;
+    async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
+    async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()>;
 }
 
 // ─── Local ──────────────────────────────────────────────────────────────────
@@ -241,6 +264,36 @@ impl ProjectConnection for LocalConnection {
     }
     async fn set_pack_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
         Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+
+    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn create_gateway_channel(
+        &self,
+        _type_id: &str,
+        _name: &str,
+        _settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn update_gateway_channel(
+        &self,
+        _id: &str,
+        _name: &str,
+        _enabled: bool,
+        _settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn set_gateway_channel_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn delete_gateway_channel(&self, _id: &str) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
     }
 }
 
@@ -784,6 +837,91 @@ impl ProjectConnection for RemoteConnection {
                 .send()
                 .await?,
             "PUT pack enabled",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/gateway/types").send().await?,
+            "GET gateway types",
+        )
+        .await?;
+        decode_json(resp, "GET gateway types").await
+    }
+    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/gateway/channels").send().await?,
+            "GET gateway channels",
+        )
+        .await?;
+        decode_json(resp, "GET gateway channels").await
+    }
+    async fn create_gateway_channel(
+        &self,
+        type_id: &str,
+        name: &str,
+        settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            type_id: &'a str,
+            name: &'a str,
+            settings: HashMap<String, String>,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/gateway/channels")
+                .json(&Body { type_id, name, settings })
+                .send()
+                .await?,
+            "POST gateway channel",
+        )
+        .await?;
+        decode_json(resp, "POST gateway channel").await
+    }
+    async fn update_gateway_channel(
+        &self,
+        id: &str,
+        name: &str,
+        enabled: bool,
+        settings: HashMap<String, String>,
+    ) -> anyhow::Result<GatewayChannel> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            name: &'a str,
+            enabled: bool,
+            settings: HashMap<String, String>,
+        }
+        let resp = ok_or_err(
+            self.put(&format!("/api/v1/gateway/channels/{id}"))
+                .json(&Body { name, enabled, settings })
+                .send()
+                .await?,
+            "PUT gateway channel",
+        )
+        .await?;
+        decode_json(resp, "PUT gateway channel").await
+    }
+    async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()> {
+        #[derive(serde::Serialize)]
+        struct Body {
+            enabled: bool,
+        }
+        ok_or_err(
+            self.put(&format!("/api/v1/gateway/channels/{id}/enabled"))
+                .json(&Body { enabled })
+                .send()
+                .await?,
+            "PUT gateway channel enabled",
+        )
+        .await?;
+        Ok(())
+    }
+    async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.delete(&format!("/api/v1/gateway/channels/{id}")).send().await?,
+            "DELETE gateway channel",
         )
         .await?;
         Ok(())

@@ -11,6 +11,7 @@ import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
 import KeysView from "./components/KeysView";
 import PacksView from "./components/PacksView";
+import GatewayView from "./components/GatewayView";
 
 export type Section =
   | "personas"
@@ -20,7 +21,8 @@ export type Section =
   | "sessions"
   | "api_tools"
   | "keys"
-  | "packs";
+  | "packs"
+  | "gateway";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -155,6 +157,17 @@ export default function App() {
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}
+            />
+          )}
+          {section === "gateway" && (
+            <GatewayView
+              snapshot={snap}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onGoToKeys={(name) => {
+                setSection("keys");
+                setSelectedId(name);
+              }}
             />
           )}
         </main>
