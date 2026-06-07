@@ -342,6 +342,7 @@ function ChannelForm({
             keys={type.requires_env}
             configured={configuredKeys}
             onGoToKeys={onGoToKeys}
+            clickable={mode === "edit"}
           />
         )}
 
@@ -428,15 +429,19 @@ function SettingInput({
 }
 
 /// The API keys this channel type needs, with configured status pulled from the
-/// stored-keys snapshot. Unconfigured keys deep-link to the Keys tab.
+/// stored-keys snapshot. Once the channel exists (`clickable`), unconfigured keys
+/// deep-link to the Keys tab. Before the channel is created the keys are shown but
+/// not clickable — navigating away would wipe the in-progress form.
 function RequiredKeys({
   keys,
   configured,
   onGoToKeys,
+  clickable,
 }: {
   keys: string[];
   configured: Set<string>;
   onGoToKeys: (name: string) => void;
+  clickable: boolean;
 }) {
   return (
     <div>
@@ -454,25 +459,40 @@ function RequiredKeys({
               <span className="font-mono text-sm text-gray-200 truncate">{k}</span>
               <div className="flex-1" />
               {isSet ? (
-                <button
-                  onClick={() => onGoToKeys(k)}
-                  className="text-xs text-green-400 hover:underline whitespace-nowrap"
-                  title="Configured — click to rotate the value"
-                >
-                  ✓ configured
-                </button>
-              ) : (
+                clickable ? (
+                  <button
+                    onClick={() => onGoToKeys(k)}
+                    className="text-xs text-green-400 hover:underline whitespace-nowrap"
+                    title="Configured — click to rotate the value"
+                  >
+                    ✓ configured
+                  </button>
+                ) : (
+                  <span className="text-xs text-green-400 whitespace-nowrap">
+                    ✓ configured
+                  </span>
+                )
+              ) : clickable ? (
                 <button
                   onClick={() => onGoToKeys(k)}
                   className="px-2 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded whitespace-nowrap"
                 >
                   + Add in Keys
                 </button>
+              ) : (
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  not configured
+                </span>
               )}
             </li>
           );
         })}
       </ul>
+      {!clickable && (
+        <p className="text-[11px] text-gray-500 mt-2">
+          Save this channel first, then add its keys from the Keys tab.
+        </p>
+      )}
     </div>
   );
 }
