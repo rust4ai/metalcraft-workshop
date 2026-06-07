@@ -162,6 +162,7 @@ export default function App() {
           {section === "gateway" && (
             <GatewayView
               snapshot={snap}
+              remoteBaseUrl={workshop.remoteBaseUrl}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onGoToKeys={(name) => {

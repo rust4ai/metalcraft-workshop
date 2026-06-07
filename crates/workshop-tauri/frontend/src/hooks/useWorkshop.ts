@@ -24,6 +24,10 @@ export function useWorkshop() {
   // agent whenever their tab is opened, not read from the snapshot.
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [sessions, setSessions] = useState<DiagnosticsSessionSummary[]>([]);
+  // Base URL of the active remote connection, captured when we open it. The
+  // agent itself can't know its public URL (it sits behind a reverse proxy), so
+  // the client is the source of truth — used to show inbound webhook URLs.
+  const [remoteBaseUrl, setRemoteBaseUrl] = useState<string | null>(null);
   const reloadTimer = useRef<number | null>(null);
 
   // Subscribe + bootstrap.
@@ -57,6 +61,7 @@ export function useWorkshop() {
             setSnapshot(null);
             setChats([]);
             setSessions([]);
+            setRemoteBaseUrl(null);
             break;
           case "file_changed":
             // Debounce snapshot reloads so a burst of writes coalesces.
@@ -136,6 +141,7 @@ export function useWorkshop() {
       }
       try {
         await invoke("open_project", { path: target });
+        setRemoteBaseUrl(null);
         await refreshRecents();
       } catch (e) {
         setLastError(String(e));
@@ -148,6 +154,7 @@ export function useWorkshop() {
     async (baseUrl: string, apiKey: string) => {
       try {
         await invoke("open_remote", { baseUrl, apiKey });
+        setRemoteBaseUrl(baseUrl);
         await refreshRecents();
       } catch (e) {
         setLastError(String(e));
@@ -163,6 +170,7 @@ export function useWorkshop() {
   return {
     snapshot,
     recents,
+    remoteBaseUrl,
     lastError,
     lastErrorSessionId,
     clearError: () => {

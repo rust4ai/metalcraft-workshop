@@ -11,13 +11,22 @@ import type {
 
 interface Props {
   snapshot: ProjectSnapshot;
+  /// Base URL of the active remote connection, used to render the exact inbound
+  /// webhook URL the user must paste into the upstream platform. Null in local
+  /// mode (gateway channels aren't shown there anyway).
+  remoteBaseUrl: string | null;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   /// Jump to the Keys tab, optionally focused on a key name (to add/rotate it).
   onGoToKeys: (name: string) => void;
 }
 
-export default function GatewayView({ snapshot, selectedId, onSelect, onGoToKeys }: Props) {
+// Adapters that receive inbound traffic at `<agent>/webhook/<adapter>` and so
+// need the user to register that URL upstream. Keep in sync with the daemon's
+// inbound webhook routes (workshop_api.rs).
+const INBOUND_WEBHOOK_ADAPTERS = new Set(["pipestreamr", "twilio"]);
+
+export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSelect, onGoToKeys }: Props) {
   const reportError = useReportError();
   const [types, setTypes] = useState<GatewayType[] | null>(null);
   const [channels, setChannels] = useState<GatewayChannel[] | null>(null);
@@ -78,6 +87,7 @@ export default function GatewayView({ snapshot, selectedId, onSelect, onGoToKeys
         types={types}
         channel={null}
         snapshot={snapshot}
+        remoteBaseUrl={remoteBaseUrl}
         configuredKeys={keyNames}
         onGoToKeys={onGoToKeys}
         onSaved={() => {
@@ -99,6 +109,7 @@ export default function GatewayView({ snapshot, selectedId, onSelect, onGoToKeys
           types={types}
           channel={channel}
           snapshot={snapshot}
+          remoteBaseUrl={remoteBaseUrl}
           configuredKeys={keyNames}
           onGoToKeys={onGoToKeys}
           onSaved={() => {
@@ -217,11 +228,69 @@ function ChannelToggle({
   );
 }
 
+// Shows the exact URL the user must register on the upstream platform (e.g. a
+// PipeStreamr project webhook) so inbound messages reach this agent. When the
+// connection base URL is known we render the real URL; otherwise a template the
+// user fills in with their public agent domain.
+function InboundWebhookCallout({
+  adapter,
+  baseUrl,
+}: {
+  adapter: string;
+  baseUrl: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+  const root = baseUrl?.replace(/\/+$/, "");
+  const url = `${root ?? "https://<your-agent-domain>"}/webhook/${adapter}`;
+  const copyable = !!root;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard can be unavailable; the URL is selectable as a fallback.
+    }
+  };
+
+  return (
+    <div className="rounded border border-accent/30 bg-accent/5 p-3 space-y-1.5">
+      <p className="text-xs font-medium text-accent-light">Inbound webhook URL</p>
+      <p className="text-[11px] text-gray-400">
+        Register this URL on the upstream platform (e.g. your PipeStreamr project
+        webhook, event <span className="font-mono">message.created</span>) so its
+        messages reach this agent.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 min-w-0 truncate px-2 py-1.5 bg-surface-1 border border-surface-3 rounded text-[11px] font-mono text-gray-200">
+          {url}
+        </code>
+        {copyable && (
+          <button
+            onClick={copy}
+            className="shrink-0 px-2 py-1.5 text-[11px] bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
+      </div>
+      {!copyable && (
+        <p className="text-[11px] text-gray-500">
+          Replace <span className="font-mono">&lt;your-agent-domain&gt;</span>{" "}
+          with your agent's public domain.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ChannelForm({
   mode,
   types,
   channel,
   snapshot,
+  remoteBaseUrl,
   configuredKeys,
   onGoToKeys,
   onSaved,
@@ -231,6 +300,7 @@ function ChannelForm({
   types: GatewayType[];
   channel: GatewayChannel | null;
   snapshot: ProjectSnapshot;
+  remoteBaseUrl: string | null;
   configuredKeys: Set<string>;
   onGoToKeys: (name: string) => void;
   onSaved: () => void;
@@ -316,6 +386,10 @@ function ChannelForm({
         )}
 
         {type && <p className="text-xs text-gray-500">{type.description}</p>}
+
+        {type && INBOUND_WEBHOOK_ADAPTERS.has(type.adapter) && (
+          <InboundWebhookCallout adapter={type.adapter} baseUrl={remoteBaseUrl} />
+        )}
 
         <Field label="Name">
           <input
