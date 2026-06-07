@@ -271,6 +271,32 @@ export interface GatewayChannel {
   created_at?: string | null;
 }
 
+export type GatewayDirection = "inbound" | "outbound";
+
+export type GatewayOutcome =
+  | "routed"
+  | "no_matching_channel"
+  | "no_persona"
+  | "signature_rejected"
+  | "sent"
+  | "send_failed"
+  | string;
+
+export interface GatewayEvent {
+  ts: string;
+  direction: GatewayDirection;
+  platform: string;
+  from?: string | null;
+  from_name?: string | null;
+  to?: string | null;
+  body: string;
+  source_id?: string | null;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  outcome: GatewayOutcome;
+  detail?: string | null;
+}
+
 export interface RunFlowPromptResult {
   prompt_index: number;
   status: string; // "completed" | "interrupted" | "failed"
@@ -322,6 +348,7 @@ export type ChatEvent =
       duration_ms: number;
       result: ChatWireMessage;
     }
+  | { kind: "reply"; content: string }
   | { kind: "done"; status: string; reason?: string | null };
 
 /// Emitted on the Tauri event bus per streaming chat turn.

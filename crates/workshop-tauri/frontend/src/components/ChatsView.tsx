@@ -136,6 +136,7 @@ function NewChatPanel({
 /// tool call (which may still be in-flight).
 type TurnEvent =
   | { kind: "llm"; messages: ChatWireMessage[]; durationMs?: number }
+  | { kind: "reply"; content: string }
   | {
       kind: "tool";
       toolCallId: string;
@@ -235,6 +236,14 @@ function ChatTranscript({
               }),
             );
           }
+          break;
+        case "reply":
+          // The agent's user-facing reply (from a say_to_user tool call). In
+          // tool-only mode this — not llm_completed — carries the message.
+          setActivity(null);
+          setTurns((prev) =>
+            appendToLastTurn(prev, { kind: "reply", content: p.content }),
+          );
           break;
         case "tool_started":
           setActivity({
@@ -392,6 +401,8 @@ function TurnCard({ turn }: { turn: Turn }) {
         {turn.events.map((ev, i) =>
           ev.kind === "llm" ? (
             <LlmCard key={`llm-${i}`} messages={ev.messages} durationMs={ev.durationMs} />
+          ) : ev.kind === "reply" ? (
+            <ReplyCard key={`reply-${i}`} content={ev.content} />
           ) : (
             <ToolCard key={`tool-${ev.toolCallId}`} event={ev} />
           ),
@@ -441,6 +452,19 @@ function LlmCard({
         // Other roles inside an LLM batch are unusual but render generically.
         return <GenericMessage key={i} message={m} />;
       })}
+    </div>
+  );
+}
+
+/// The agent's user-facing reply (a `say_to_user` call). Rendered like an
+/// assistant message bubble — in tool-only mode this is the assistant's message.
+function ReplyCard({ content }: { content: string }) {
+  return (
+    <div className="px-3 py-2 bg-surface-1 border-l-2 border-accent rounded text-sm whitespace-pre-wrap">
+      <div className="text-xs uppercase tracking-wide text-accent-light mb-1">
+        Assistant
+      </div>
+      {content}
     </div>
   );
 }
@@ -500,12 +524,24 @@ function GenericMessage({ message }: { message: ChatWireMessage }) {
     case "assistant":
       return <LlmCard messages={[message]} />;
     case "tool_call":
+      // say_to_user is the user-facing reply, not an internal tool. Render its
+      // message (carried in args.message) as an assistant bubble.
+      if (message.name === "say_to_user") {
+        const text =
+          (message.args as { message?: string } | null)?.message ?? "";
+        return <ReplyCard content={text} />;
+      }
       return (
         <div className="px-3 py-2 bg-surface-1 border-l-2 border-purple-500 rounded text-xs">
           🔧 {message.name}
         </div>
       );
     case "tool_result":
+      // The say_to_user result is just a delivery ack; the text was already
+      // shown by its tool_call above, so hide it.
+      if (message.name === "say_to_user") {
+        return null;
+      }
       return (
         <details className="px-3 py-2 bg-surface-1 border-l-2 border-green-500 rounded text-xs">
           <summary className="text-green-300">↳ {message.name} result</summary>
