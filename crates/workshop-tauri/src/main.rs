@@ -164,7 +164,12 @@ async fn delete_persona(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
-    conn.delete_persona(&slug).await.map_err(|e| e.to_string())
+    conn.delete_persona(&slug).await.map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Persona,
+        id: slug,
+    });
+    Ok(())
 }
 
 // ---- Skills ----
@@ -202,7 +207,12 @@ async fn delete_skill(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
-    conn.delete_skill(&slug).await.map_err(|e| e.to_string())
+    conn.delete_skill(&slug).await.map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Skill,
+        id: slug,
+    });
+    Ok(())
 }
 
 // ---- Flows ----
@@ -236,7 +246,14 @@ async fn save_flow(
 #[tauri::command]
 async fn delete_flow(id: String, state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
     let conn = require_connection(&state)?;
-    conn.delete_flow(&id).await.map_err(|e| e.to_string())
+    let deleted = conn.delete_flow(&id).await.map_err(|e| e.to_string())?;
+    if deleted {
+        state.emit(WorkshopEvent::SaveOk {
+            kind: FileKind::Flow,
+            id,
+        });
+    }
+    Ok(deleted)
 }
 
 // ---- Diagnostics ----
@@ -300,7 +317,14 @@ async fn delete_api_tool(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
-    conn.delete_api_tool(&name).await.map_err(|e| e.to_string())
+    conn.delete_api_tool(&name)
+        .await
+        .map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::ApiTool,
+        id: name,
+    });
+    Ok(())
 }
 
 // ---- API keys ----
