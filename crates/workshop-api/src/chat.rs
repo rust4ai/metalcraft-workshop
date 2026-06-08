@@ -79,6 +79,10 @@ pub enum ChatEvent {
         duration_ms: u64,
         result: ChatWireMessage,
     },
+    /// The agent's user-facing reply, produced by a `say_to_user` tool call. In
+    /// tool-only mode this — not `LlmCompleted` — carries the assistant's
+    /// message; the workshop renders it as the reply bubble.
+    Reply { content: String },
     Done {
         status: String,
         #[serde(default)]

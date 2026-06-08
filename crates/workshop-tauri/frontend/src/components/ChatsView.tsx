@@ -720,6 +720,16 @@ function groupHistoricalMessages(messages: ChatWireMessage[]): Turn[] {
     } else if (m.role === "tool_call") {
       flushLlm();
       if (turns.length === 0) continue;
+      // say_to_user is the user-facing reply, not an internal tool. Render it as
+      // a reply bubble (mirroring the live `reply` event), not a tool card — and
+      // don't register it for tool_result wiring, so its delivery-ack result is
+      // dropped. Without this, reconciling a persisted chat turns the reply back
+      // into a `✓ say_to_user` card and the answer text disappears.
+      if (m.name === "say_to_user") {
+        const content = (m.args as { message?: string } | null)?.message ?? "";
+        turns[turns.length - 1].events.push({ kind: "reply", content });
+        continue;
+      }
       const ev: Extract<TurnEvent, { kind: "tool" }> = {
         kind: "tool",
         toolCallId: m.id,
