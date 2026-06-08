@@ -13,7 +13,7 @@ use workshop_api::{
     connection::{LocalConnection, ProjectConnection, RemoteConnection},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
-    gateway::{GatewayChannel, GatewayType},
+    gateway::{GatewayChannel, GatewayEvent, GatewayType},
     integration_packs::{PackDetail, PackSummary},
     keys::{KeySummary, RecommendedKey},
     personas, project, skills,
@@ -552,6 +552,23 @@ async fn list_gateway_channels(
 }
 
 #[tauri::command]
+async fn list_gateway_channel_events(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<GatewayEvent>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_gateway_channel_events(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_gateway_activity(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<GatewayEvent>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_gateway_activity().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn create_gateway_channel(
     type_id: String,
     name: String,
@@ -804,6 +821,8 @@ fn main() {
             set_pack_enabled,
             list_gateway_types,
             list_gateway_channels,
+            list_gateway_channel_events,
+            list_gateway_activity,
             create_gateway_channel,
             update_gateway_channel,
             set_gateway_channel_enabled,

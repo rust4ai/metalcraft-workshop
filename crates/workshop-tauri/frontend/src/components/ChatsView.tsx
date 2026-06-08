@@ -188,10 +188,16 @@ function ChatTranscript({
   // from it. This is the single source of truth: the same grouping is used
   // for the initial load AND for reconciling after every turn settles, so a
   // live stream that drops or garbles mid-turn self-heals to the saved state.
+  // The number of messages in the agent's last-loaded persisted copy. The
+  // daemon only persists a turn once, at the very end, so this count stays at
+  // the pre-turn baseline for the whole turn and then jumps. We use that jump
+  // to detect when an interrupted turn has actually settled server-side.
+  const persistedCountRef = useRef(0);
   const loadDetail = useCallback(
     () =>
       invoke<ChatDetail>("get_chat", { id: chatId })
         .then((d) => {
+          persistedCountRef.current = d.messages.length;
           setDetail(d);
           setTurns(groupHistoricalMessages(d.messages));
         })
@@ -203,6 +209,63 @@ function ChatTranscript({
   // changes — same pattern as onTurnSettledRef.
   const loadDetailRef = useRef(loadDetail);
   loadDetailRef.current = loadDetail;
+
+  // Persisted message count captured when the in-flight turn started, i.e. the
+  // pre-turn baseline. A settled turn pushes the persisted count above this.
+  const turnBaselineCountRef = useRef(0);
+  // Cancellation token for an in-flight settle poll. Replaced on each new turn
+  // and on unmount/chat switch so a stale poll can't reconcile the wrong chat.
+  const settlePollRef = useRef<{ cancelled: boolean } | null>(null);
+
+  // After a turn ends WITHOUT a clean `completed` terminal (the live SSE feed
+  // dropped mid-turn), the daemon may still be running and hasn't persisted the
+  // final transcript yet. Reloading immediately would wipe the optimistic
+  // in-flight turn and show stale pre-turn state with no recovery. Instead,
+  // poll the persisted copy until its message count grows past the pre-turn
+  // baseline (the daemon persists the whole turn in one write at the end,
+  // success or fail), then reconcile once. Until then we keep the live overlay
+  // on screen. Bounded so a turn that genuinely never persists can't poll
+  // forever — the sub_agent tool caps at 120s, so ~150s of polling covers it.
+  const reconcileWhenSettled = useCallback(() => {
+    // Cancel any prior poll before starting a fresh one.
+    if (settlePollRef.current) settlePollRef.current.cancelled = true;
+    const token = { cancelled: false };
+    settlePollRef.current = token;
+    const baseline = turnBaselineCountRef.current;
+    const MAX_ATTEMPTS = 75;
+    const INTERVAL_MS = 2000;
+    let attempts = 0;
+    const poll = () => {
+      if (token.cancelled) return;
+      invoke<ChatDetail>("get_chat", { id: chatId })
+        .then((d) => {
+          if (token.cancelled) return;
+          const settled = d.messages.length > baseline;
+          if (settled || attempts >= MAX_ATTEMPTS) {
+            // Daemon finished (or we gave up): reconcile to the persisted copy.
+            persistedCountRef.current = d.messages.length;
+            setDetail(d);
+            setTurns(groupHistoricalMessages(d.messages));
+            // Clear the "interrupted" banner only on a genuine recovery; if we
+            // gave up without the turn persisting, keep it so the user knows.
+            if (settled) setStatus("");
+            onTurnSettledRef.current();
+            settlePollRef.current = null;
+            return;
+          }
+          attempts += 1;
+          window.setTimeout(poll, INTERVAL_MS);
+        })
+        .catch((e) => {
+          if (token.cancelled) return;
+          reportError("get_chat", e);
+          settlePollRef.current = null;
+        });
+    };
+    poll();
+  }, [chatId, reportError]);
+  const reconcileWhenSettledRef = useRef(reconcileWhenSettled);
+  reconcileWhenSettledRef.current = reconcileWhenSettled;
 
   useEffect(() => {
     loadDetail();
@@ -217,6 +280,10 @@ function ChatTranscript({
       switch (p.kind) {
         case "turn_started":
           turnSessionIdRef.current = p.session_id ?? null;
+          // A new turn supersedes any settle poll still running for the prior
+          // one, and its pre-turn persisted count becomes the settle baseline.
+          if (settlePollRef.current) settlePollRef.current.cancelled = true;
+          turnBaselineCountRef.current = persistedCountRef.current;
           setTurns((prev) => [
             ...prev,
             { index: p.turn_index, userMessage: p.user_message, events: [] },
@@ -274,12 +341,19 @@ function ChatTranscript({
               ? ""
               : `${p.status}${p.reason ? `: ${p.reason}` : ""}`,
           );
-          // Turn finished (ok, interrupted, or failed) — the agent has
-          // persisted the chat and written its session turn/error files.
-          // Reconcile the transcript against that persisted copy (the stream
-          // is only a best-effort live overlay) and refresh the sidebar lists.
-          loadDetailRef.current();
-          onTurnSettledRef.current();
+          if (p.status === "completed") {
+            // Clean terminal: the agent has persisted the chat. Reconcile the
+            // transcript against that persisted copy (the stream is only a
+            // best-effort live overlay) and refresh the sidebar lists.
+            loadDetailRef.current();
+            onTurnSettledRef.current();
+          } else {
+            // The live feed dropped (or the turn failed) — the daemon may still
+            // be running and hasn't persisted the final transcript yet.
+            // Reconciling now would wipe the in-flight turn to stale state, so
+            // poll until the persisted copy settles, then reconcile once.
+            reconcileWhenSettledRef.current();
+          }
           break;
       }
     }).then((u) => {
@@ -287,6 +361,9 @@ function ChatTranscript({
     });
     return () => {
       if (unlisten) unlisten();
+      // Cancel a settle poll bound to the chat we're leaving so it can't
+      // reconcile after the component re-keys to a different chat.
+      if (settlePollRef.current) settlePollRef.current.cancelled = true;
     };
   }, [chatId]);
 

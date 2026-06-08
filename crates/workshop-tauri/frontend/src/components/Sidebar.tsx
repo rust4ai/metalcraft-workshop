@@ -23,6 +23,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "keys", label: "Keys" },
   { id: "packs", label: "Packs" },
   { id: "gateway", label: "Gateway" },
+  { id: "network", label: "Network" },
 ];
 
 export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect, chats, sessions }: Props) {
@@ -192,6 +193,9 @@ function listItems(
     case "gateway":
       // The Gateway panel fetches and lists its own channels (like Packs).
       return [];
+    case "network":
+      // The Network panel fetches its own activity log.
+      return [];
   }
 }
 
@@ -225,5 +229,9 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return snap.mode === "remote"
         ? "Click + New Channel to configure a gateway channel."
         : "Gateway channels require a remote connection.";
+    case "network":
+      return snap.mode === "remote"
+        ? "Network activity loads in the main panel."
+        : "Network activity requires a remote connection.";
   }
 }

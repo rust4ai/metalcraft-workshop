@@ -12,6 +12,7 @@ import ApiToolsView from "./components/ApiToolsView";
 import KeysView from "./components/KeysView";
 import PacksView from "./components/PacksView";
 import GatewayView from "./components/GatewayView";
+import NetworkView from "./components/NetworkView";
 
 export type Section =
   | "personas"
@@ -22,7 +23,8 @@ export type Section =
   | "api_tools"
   | "keys"
   | "packs"
-  | "gateway";
+  | "gateway"
+  | "network";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -171,6 +173,7 @@ export default function App() {
               }}
             />
           )}
+          {section === "network" && <NetworkView snapshot={snap} />}
         </main>
       </div>
 

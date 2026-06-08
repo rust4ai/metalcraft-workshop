@@ -17,7 +17,7 @@ use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
-use crate::gateway::{GatewayChannel, GatewayType};
+use crate::gateway::{GatewayChannel, GatewayEvent, GatewayType};
 use crate::integration_packs::{PackDetail, PackSummary};
 use std::collections::HashMap;
 use crate::keys::{self, KeySummary, RecommendedKey};
@@ -108,6 +108,10 @@ pub trait ProjectConnection: Send + Sync {
     // `<data>/gateway_channels.json`.
     async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>>;
     async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>>;
+    /// Recent inbound/outbound activity for one channel (newest first).
+    async fn list_gateway_channel_events(&self, id: &str) -> anyhow::Result<Vec<GatewayEvent>>;
+    /// Recent gateway activity across all channels, incl. unrouted inbound.
+    async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>>;
     async fn create_gateway_channel(
         &self,
         type_id: &str,
@@ -270,6 +274,12 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
     }
     async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn list_gateway_channel_events(&self, _id: &str) -> anyhow::Result<Vec<GatewayEvent>> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
     }
     async fn create_gateway_channel(
@@ -857,6 +867,22 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         decode_json(resp, "GET gateway channels").await
+    }
+    async fn list_gateway_channel_events(&self, id: &str) -> anyhow::Result<Vec<GatewayEvent>> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/gateway/channels/{id}/events")).send().await?,
+            "GET gateway channel events",
+        )
+        .await?;
+        decode_json(resp, "GET gateway channel events").await
+    }
+    async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/gateway/activity").send().await?,
+            "GET gateway activity",
+        )
+        .await?;
+        decode_json(resp, "GET gateway activity").await
     }
     async fn create_gateway_channel(
         &self,

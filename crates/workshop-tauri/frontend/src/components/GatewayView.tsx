@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
+import { GatewayEventList } from "./GatewayEvents";
 import type {
   GatewayChannel,
+  GatewayEvent,
   GatewaySettingField,
   GatewayType,
   KeySummary,
@@ -314,6 +316,7 @@ function ChannelForm({
   );
   const [enabled, setEnabled] = useState(channel?.enabled ?? false);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<"settings" | "events">("settings");
 
   const type = useMemo(() => types.find((t) => t.id === typeId), [types, typeId]);
 
@@ -362,6 +365,30 @@ function ChannelForm({
           {mode === "new" ? "New gateway channel" : channel?.name}
         </h2>
 
+        {mode === "edit" && (
+          <div className="flex gap-1 border-b border-surface-3 -mt-1">
+            {(["settings", "events"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-1.5 text-xs border-b-2 -mb-px ${
+                  tab === t
+                    ? "border-accent text-accent-light"
+                    : "border-transparent text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {t === "settings" ? "Settings" : "Events"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === "edit" && tab === "events" && channel && (
+          <ChannelEventsTab channelId={channel.id} />
+        )}
+
+        {(mode === "new" || tab === "settings") && (
+          <>
         {mode === "new" ? (
           <Field label="Channel type">
             <select
@@ -454,7 +481,54 @@ function ChannelForm({
             the channel list (or the toggle here after saving).
           </p>
         )}
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+/// The "Events" tab on a channel's show page: recent inbound/outbound traffic
+/// that matched this channel. Fetched on mount and on demand via Refresh.
+function ChannelEventsTab({ channelId }: { channelId: string }) {
+  const reportError = useReportError();
+  const [events, setEvents] = useState<GatewayEvent[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setEvents(await invoke<GatewayEvent[]>("list_gateway_channel_events", { id: channelId }));
+    } catch (e) {
+      reportError("list_gateway_channel_events", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [channelId, reportError]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-500">
+          Inbound messages and outbound replies for this channel.
+        </p>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="px-2 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded disabled:opacity-40"
+        >
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+      {events === null ? (
+        <div className="text-sm text-gray-500">Loading…</div>
+      ) : (
+        <GatewayEventList events={events} />
+      )}
     </div>
   );
 }

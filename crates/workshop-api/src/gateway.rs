@@ -49,3 +49,30 @@ pub struct GatewayChannel {
     #[serde(default)]
     pub created_at: Option<String>,
 }
+
+/// One inbound/outbound gateway traffic record, mirroring the agent's
+/// `gateway_activity::GatewayEvent`. Used by the per-channel Events view and the
+/// global Network view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayEvent {
+    pub ts: String,
+    pub direction: String,
+    pub platform: String,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub from_name: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub source_id: Option<String>,
+    #[serde(default)]
+    pub channel_id: Option<String>,
+    #[serde(default)]
+    pub channel_name: Option<String>,
+    pub outcome: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
