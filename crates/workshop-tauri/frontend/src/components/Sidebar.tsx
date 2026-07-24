@@ -24,6 +24,7 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "packs", label: "Packs" },
   { id: "gateway", label: "Gateway" },
   { id: "network", label: "Network" },
+  { id: "settings", label: "Settings" },
 ];
 
 export default function Sidebar({ snapshot, section, selectedId, onSection, onSelect, chats, sessions }: Props) {
@@ -196,6 +197,9 @@ function listItems(
     case "network":
       // The Network panel fetches its own activity log.
       return [];
+    case "settings":
+      // The Settings panel renders its own content in the main pane.
+      return [];
   }
 }
 
@@ -233,5 +237,7 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return snap.mode === "remote"
         ? "Network activity loads in the main panel."
         : "Network activity requires a remote connection.";
+    case "settings":
+      return "Settings load in the main panel.";
   }
 }

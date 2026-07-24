@@ -28,6 +28,15 @@ use futures_util::stream::Stream;
 use metalcraft_flows::{SavedFlow, ValidationError};
 use std::pin::Pin;
 
+/// Identity/version of the connected agent, surfaced in the Workshop's
+/// Settings tab. `version` is `None` in local mode (no agent process) or when
+/// talking to an agent old enough to predate the `/api/v1/info` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
 #[async_trait]
 pub trait ProjectConnection: Send + Sync {
     fn mode(&self) -> ConnectionMode;
@@ -37,6 +46,13 @@ pub trait ProjectConnection: Send + Sync {
     }
 
     async fn snapshot(&self) -> anyhow::Result<ProjectSnapshot>;
+
+    /// Identity/version of the agent behind this connection. Local mode has no
+    /// agent process, so the default returns an empty [`AgentInfo`]; the remote
+    /// impl fetches `GET /api/v1/info`.
+    async fn agent_info(&self) -> anyhow::Result<AgentInfo> {
+        Ok(AgentInfo::default())
+    }
 
     async fn get_persona(&self, slug: &str) -> anyhow::Result<Persona>;
     async fn save_persona(&self, slug: &str, persona: &Persona) -> anyhow::Result<()>;
@@ -501,6 +517,18 @@ impl ProjectConnection for RemoteConnection {
                 has_api_tools: !snap.layout.api_tools_dir.is_empty(),
             },
         })
+    }
+
+    async fn agent_info(&self) -> anyhow::Result<AgentInfo> {
+        let resp = self.get("/api/v1/info").send().await?;
+        // An agent old enough to predate this endpoint 404s — that's not an
+        // error, it just means "version unknown". Report reachability without a
+        // version rather than failing the whole Settings load.
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(AgentInfo::default());
+        }
+        let resp = ok_or_err(resp, "GET /info").await?;
+        decode_json(resp, "GET /info").await
     }
 
     async fn get_persona(&self, slug: &str) -> anyhow::Result<Persona> {

@@ -13,6 +13,7 @@ import KeysView from "./components/KeysView";
 import PacksView from "./components/PacksView";
 import GatewayView from "./components/GatewayView";
 import NetworkView from "./components/NetworkView";
+import SettingsView from "./components/SettingsView";
 
 export type Section =
   | "personas"
@@ -24,7 +25,8 @@ export type Section =
   | "keys"
   | "packs"
   | "gateway"
-  | "network";
+  | "network"
+  | "settings";
 
 export default function App() {
   const workshop = useWorkshop();
@@ -76,7 +78,7 @@ export default function App() {
           onClick={workshop.closeProject}
           className="text-xs text-gray-400 hover:text-gray-200"
         >
-          Close project
+          {snap.mode === "remote" ? "Disconnect from agent" : "Close project"}
         </button>
       </header>
 
@@ -174,6 +176,7 @@ export default function App() {
             />
           )}
           {section === "network" && <NetworkView snapshot={snap} />}
+          {section === "settings" && <SettingsView snapshot={snap} />}
         </main>
       </div>
 

@@ -163,6 +163,17 @@ export interface RecommendedKey {
   packs: string[];
 }
 
+/// Returned by the `settings_info` Tauri command. Mirrors `SettingsInfo` in
+/// workshop-tauri/src/main.rs.
+export interface SettingsInfo {
+  /** Version of this Workshop desktop app. */
+  workshop_version: string;
+  /** Connected agent's version; null in local mode / unreachable / older agent. */
+  agent_version: string | null;
+  /** Whether the agent's info endpoint was reached (always false in local mode). */
+  agent_reachable: boolean;
+}
+
 export interface ProjectSnapshot {
   root: string;
   mode: ConnectionMode;

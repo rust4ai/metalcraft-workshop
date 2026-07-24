@@ -127,6 +127,53 @@ async fn list_recents() -> Result<Vec<RecentEntry>, String> {
     Ok(load_recents())
 }
 
+/// Everything the Settings tab needs in one round trip: this app's own version
+/// and, for a remote connection, the connected agent's version (so you can
+/// confirm a deploy actually landed). The frontend already has the connection
+/// mode + root from the snapshot, so those aren't repeated here.
+#[derive(serde::Serialize)]
+struct SettingsInfo {
+    /// Version of this Workshop desktop app (from its Cargo package).
+    workshop_version: String,
+    /// Connected agent's version. `None` in local mode, when the agent is
+    /// unreachable, or when it predates the `/api/v1/info` endpoint.
+    agent_version: Option<String>,
+    /// Whether we successfully reached the agent's info endpoint. Always false
+    /// in local mode (there is no agent process).
+    agent_reachable: bool,
+}
+
+#[tauri::command]
+async fn settings_info(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<SettingsInfo, String> {
+    let workshop_version = env!("CARGO_PKG_VERSION").to_string();
+    let conn = require_connection(&state)?;
+
+    // Local connections have no agent process to interrogate.
+    if !matches!(conn.mode(), project::ConnectionMode::Remote) {
+        return Ok(SettingsInfo {
+            workshop_version,
+            agent_version: None,
+            agent_reachable: false,
+        });
+    }
+
+    // Reaching the agent but getting no version back (an older agent) still
+    // counts as reachable — the tab distinguishes "unknown version" from
+    // "couldn't connect".
+    let (agent_version, agent_reachable) = match conn.agent_info().await {
+        Ok(info) => (info.version, true),
+        Err(_) => (None, false),
+    };
+
+    Ok(SettingsInfo {
+        workshop_version,
+        agent_version,
+        agent_reachable,
+    })
+}
+
 // ---- Personas ----
 
 #[tauri::command]
@@ -813,6 +860,7 @@ fn main() {
             refresh_snapshot,
             get_snapshot,
             list_recents,
+            settings_info,
             get_persona,
             save_persona,
             delete_persona,
