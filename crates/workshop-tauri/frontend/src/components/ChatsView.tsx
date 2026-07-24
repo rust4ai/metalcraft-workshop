@@ -77,8 +77,18 @@ function NewChatPanel({
   onCreated: (id: string) => void;
 }) {
   const reportError = useReportError();
-  const [persona, setPersona] = useState(snapshot.personas[0]?.slug ?? "");
+  // Default to the Orchestrator when it's installed (it delegates to the right
+  // specialist for anything), falling back to the first persona otherwise.
+  const defaultSlug =
+    snapshot.personas.find((p) => p.slug === "orchestrator-agent")?.slug ??
+    snapshot.personas[0]?.slug ??
+    "";
+  const [persona, setPersona] = useState(defaultSlug);
+  // The persona picker is hidden until the user opts into a custom persona.
+  const [customPersona, setCustomPersona] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  const selected = snapshot.personas.find((p) => p.slug === persona);
 
   const create = async () => {
     if (!persona) return;
@@ -103,22 +113,44 @@ function NewChatPanel({
           Spin up an ad-hoc chat against this agent. Chats are persisted on
           the agent across restarts.
         </p>
-        <label className="block">
-          <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-            Persona
-          </span>
-          <select
-            value={persona}
-            onChange={(e) => setPersona(e.target.value)}
-            className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
-          >
-            {snapshot.personas.map((p) => (
-              <option key={p.slug} value={p.slug}>
-                {p.name} ({p.slug})
-              </option>
-            ))}
-          </select>
-        </label>
+
+        {customPersona ? (
+          <label className="block">
+            <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+              Persona
+            </span>
+            <select
+              value={persona}
+              onChange={(e) => setPersona(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+            >
+              {snapshot.personas.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.name} ({p.slug})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 bg-surface-2 border border-surface-3 rounded">
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-wide text-gray-500">
+                Persona
+              </div>
+              <div className="text-sm text-gray-200 truncate">
+                {selected?.name ?? persona ?? "—"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCustomPersona(true)}
+              className="shrink-0 text-xs text-accent-light/80 hover:text-accent-light underline"
+            >
+              Use custom persona
+            </button>
+          </div>
+        )}
+
         <button
           onClick={create}
           disabled={creating || !persona}
