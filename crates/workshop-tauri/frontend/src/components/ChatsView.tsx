@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useReportError } from "../hooks/useReportError";
 import type {
+  AgentInfo,
   ChatDetail,
   ChatStreamEvent,
   ChatSummary,
@@ -77,16 +78,38 @@ function NewChatPanel({
   onCreated: (id: string) => void;
 }) {
   const reportError = useReportError();
-  // Default to the Orchestrator when it's installed (it delegates to the right
-  // specialist for anything), falling back to the first persona otherwise.
-  const defaultSlug =
+  // Initial default before the agent's config loads: the orchestrator if
+  // installed (it delegates to the right specialist for anything), else first.
+  const fallbackSlug =
     snapshot.personas.find((p) => p.slug === "orchestrator-agent")?.slug ??
     snapshot.personas[0]?.slug ??
     "";
-  const [persona, setPersona] = useState(defaultSlug);
+  const [persona, setPersona] = useState(fallbackSlug);
   // The persona picker is hidden until the user opts into a custom persona.
   const [customPersona, setCustomPersona] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  // The agent decides its own default persona (env METALCRAFT_DEFAULT_PERSONA,
+  // via /api/v1/info). Apply it once on mount if it's actually installed and the
+  // user hasn't already reached for the custom picker.
+  useEffect(() => {
+    let cancelled = false;
+    invoke<AgentInfo>("agent_info")
+      .then((info) => {
+        const wanted = info.default_persona;
+        if (cancelled || !wanted) return;
+        if (snapshot.personas.some((p) => p.slug === wanted)) {
+          setCustomPersona((custom) => {
+            if (!custom) setPersona(wanted);
+            return custom;
+          });
+        }
+      })
+      .catch(() => {}); // older agent / local mode → keep the fallback
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.personas]);
 
   const selected = snapshot.personas.find((p) => p.slug === persona);
 

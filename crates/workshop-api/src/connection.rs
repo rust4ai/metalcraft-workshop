@@ -35,6 +35,10 @@ use std::pin::Pin;
 pub struct AgentInfo {
     pub name: Option<String>,
     pub version: Option<String>,
+    /// Persona the Workshop's New Chat modal defaults to. `None` for local mode
+    /// or an agent old enough to predate the field.
+    #[serde(default)]
+    pub default_persona: Option<String>,
 }
 
 /// A scheduled follow-up, as returned by the agent's `/api/v1/scheduled-tasks`.

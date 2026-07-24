@@ -163,6 +163,14 @@ export interface RecommendedKey {
   packs: string[];
 }
 
+/// Returned by the `agent_info` Tauri command (from the agent's `/api/v1/info`).
+export interface AgentInfo {
+  name?: string | null;
+  version?: string | null;
+  /** Persona the New Chat modal defaults to; null in local mode / older agent. */
+  default_persona?: string | null;
+}
+
 /// Returned by the `settings_info` Tauri command. Mirrors `SettingsInfo` in
 /// workshop-tauri/src/main.rs.
 export interface SettingsInfo {

@@ -147,6 +147,16 @@ struct SettingsInfo {
     agent_reachable: bool,
 }
 
+/// Identity/version + config of the connected agent (from `/api/v1/info`).
+/// Used by the New Chat modal to read the agent-configured default persona.
+#[tauri::command]
+async fn agent_info(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<workshop_api::connection::AgentInfo, String> {
+    let conn = require_connection(&state)?;
+    conn.agent_info().await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn settings_info(
     state: tauri::State<'_, Arc<AppState>>,
@@ -939,6 +949,7 @@ fn main() {
             get_snapshot,
             list_recents,
             settings_info,
+            agent_info,
             get_persona,
             save_persona,
             delete_persona,
