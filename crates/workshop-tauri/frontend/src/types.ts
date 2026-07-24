@@ -174,6 +174,18 @@ export interface SettingsInfo {
   agent_reachable: boolean;
 }
 
+/// A scheduled follow-up, from the agent's `/api/v1/scheduled-tasks`. Mirrors
+/// `ScheduledTask` in workshop-api. Timestamps are RFC3339 strings.
+export interface ScheduledTask {
+  id: string;
+  chat_id?: string | null;
+  run_at: string;
+  created_at: string;
+  task: string;
+  persona?: string | null;
+  status: "pending" | "running" | "done" | "failed" | "cancelled";
+}
+
 export interface ProjectSnapshot {
   root: string;
   mode: ConnectionMode;

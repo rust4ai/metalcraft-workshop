@@ -37,6 +37,21 @@ pub struct AgentInfo {
     pub version: Option<String>,
 }
 
+/// A scheduled follow-up, as returned by the agent's `/api/v1/scheduled-tasks`.
+/// Timestamps arrive as RFC3339 strings (the agent stores `DateTime<Utc>`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTask {
+    pub id: String,
+    #[serde(default)]
+    pub chat_id: Option<String>,
+    pub run_at: String,
+    pub created_at: String,
+    pub task: String,
+    #[serde(default)]
+    pub persona: Option<String>,
+    pub status: String,
+}
+
 #[async_trait]
 pub trait ProjectConnection: Send + Sync {
     fn mode(&self) -> ConnectionMode;
@@ -112,6 +127,19 @@ pub trait ProjectConnection: Send + Sync {
         id: &str,
         message: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>>;
+
+    /// Subscribe to a chat's *agent-initiated* turns (scheduled follow-ups the
+    /// daemon fires while no user turn is in flight). Long-lived SSE stream;
+    /// each item is one decoded event, same wire shape as `chat_turn`.
+    async fn subscribe_chat_events(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>>;
+
+    /// List scheduled follow-ups (pending + recent), newest first.
+    async fn list_scheduled_tasks(&self) -> anyhow::Result<Vec<ScheduledTask>>;
+    /// Cancel a pending scheduled follow-up.
+    async fn cancel_scheduled_task(&self, id: &str) -> anyhow::Result<()>;
 
     // Integration packs — remote-only. Pack state is managed by the agent
     // process (lives in `<data>/integration_packs.json`), not the workshop.
@@ -274,6 +302,19 @@ impl ProjectConnection for LocalConnection {
         _message: &str,
     ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
         Err(chat::not_supported_in_local_mode("Chat"))
+    }
+    async fn subscribe_chat_events(
+        &self,
+        _id: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
+        Err(chat::not_supported_in_local_mode("Chat events"))
+    }
+    async fn list_scheduled_tasks(&self) -> anyhow::Result<Vec<ScheduledTask>> {
+        // Scheduled follow-ups live on the agent; local mode has none.
+        Ok(Vec::new())
+    }
+    async fn cancel_scheduled_task(&self, _id: &str) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Scheduled tasks"))
     }
 
     async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {
@@ -846,6 +887,46 @@ impl ProjectConnection for RemoteConnection {
         let byte_stream = resp.bytes_stream();
         let event_stream = sse_decode(byte_stream);
         Ok(Box::pin(event_stream))
+    }
+
+    async fn subscribe_chat_events(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Pin<Box<dyn Stream<Item = anyhow::Result<ChatEvent>> + Send>>> {
+        // Long-lived SSE like `chat_turn` — built inline WITHOUT the per-request
+        // timeout so an idle subscription (waiting for a follow-up to fire) isn't
+        // torn down mid-wait.
+        let resp = self
+            .client
+            .get(self.url(&format!("/api/v1/chats/{id}/events")))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let msg = resp.text().await.unwrap_or_default();
+            anyhow::bail!("GET chat events: HTTP {} {}", status, msg);
+        }
+        let event_stream = sse_decode(resp.bytes_stream());
+        Ok(Box::pin(event_stream))
+    }
+
+    async fn list_scheduled_tasks(&self) -> anyhow::Result<Vec<ScheduledTask>> {
+        let resp = ok_or_err(
+            self.get("/api/v1/scheduled-tasks").send().await?,
+            "GET scheduled-tasks",
+        )
+        .await?;
+        decode_json(resp, "GET scheduled-tasks").await
+    }
+
+    async fn cancel_scheduled_task(&self, id: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.delete(&format!("/api/v1/scheduled-tasks/{id}")).send().await?,
+            "DELETE scheduled-task",
+        )
+        .await?;
+        Ok(())
     }
 
     async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {

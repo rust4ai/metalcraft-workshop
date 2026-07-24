@@ -10,7 +10,7 @@ use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
     api_tools::{ApiToolConfig, ApiToolSummary},
     chat::{ChatDetail, ChatEvent, ChatSummary, RunFlowResult},
-    connection::{LocalConnection, ProjectConnection, RemoteConnection},
+    connection::{LocalConnection, ProjectConnection, RemoteConnection, ScheduledTask},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     gateway::{GatewayChannel, GatewayEvent, GatewayType},
@@ -26,6 +26,10 @@ struct AppState {
     connection: Mutex<Option<Arc<dyn ProjectConnection>>>,
     watcher: Mutex<Option<ProjectWatcher>>,
     app_handle: tauri::AppHandle,
+    /// Background task streaming a chat's agent-initiated events (scheduled
+    /// follow-ups). At most one runs at a time — starting a new subscription or
+    /// closing the chat aborts the previous.
+    events_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl AppState {
@@ -566,6 +570,79 @@ async fn chat_turn(
     Ok(())
 }
 
+/// Subscribe to a chat's agent-initiated turns (scheduled follow-ups) and relay
+/// them onto the same `chat-stream` bus the UI already consumes, so a follow-up
+/// that fires while the chat is open renders live. At most one subscription
+/// runs; starting a new one (or `stop_chat_events`) aborts the previous.
+#[tauri::command]
+async fn subscribe_chat_events(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    let conn = require_connection(&state)?;
+    let app_handle = state.app_handle.clone();
+
+    // Abort any prior subscription before starting the new one.
+    if let Some(prev) = state.events_task.lock().take() {
+        prev.abort();
+    }
+
+    let handle = tokio::spawn(async move {
+        let mut stream = match conn.subscribe_chat_events(&id).await {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("subscribe_chat_events({id}) failed: {e}");
+                return;
+            }
+        };
+        while let Some(ev) = stream.next().await {
+            match ev {
+                Ok(event) => {
+                    let payload = ChatStreamEvent { chat_id: id.clone(), event };
+                    if let Err(e) = app_handle.emit("chat-stream", &payload) {
+                        log::error!("chat-stream (events) emit failed: {e}");
+                    }
+                }
+                // Transport hiccup on the idle subscription — stop quietly; the
+                // frontend reconciles from the persisted chat on reopen.
+                Err(e) => {
+                    log::warn!("chat events stream for {id} ended: {e}");
+                    break;
+                }
+            }
+        }
+    });
+    *state.events_task.lock() = Some(handle);
+    Ok(())
+}
+
+/// Stop the active chat-events subscription (called when the chat closes).
+#[tauri::command]
+async fn stop_chat_events(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    if let Some(prev) = state.events_task.lock().take() {
+        prev.abort();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn list_scheduled_tasks(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<ScheduledTask>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_scheduled_tasks().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cancel_scheduled_task(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.cancel_scheduled_task(&id).await.map_err(|e| e.to_string())
+}
+
 // ---- Integration packs ----
 
 #[tauri::command]
@@ -819,6 +896,7 @@ fn main() {
             let state = Arc::new(AppState {
                 connection: Mutex::new(None),
                 watcher: Mutex::new(None),
+                events_task: Mutex::new(None),
                 app_handle: handle.clone(),
             });
             handle.manage(state.clone());
@@ -888,6 +966,10 @@ fn main() {
             create_chat,
             delete_chat,
             chat_turn,
+            subscribe_chat_events,
+            stop_chat_events,
+            list_scheduled_tasks,
+            cancel_scheduled_task,
             list_integration_packs,
             get_integration_pack,
             set_pack_enabled,

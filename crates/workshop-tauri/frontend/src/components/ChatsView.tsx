@@ -8,6 +8,7 @@ import type {
   ChatSummary,
   ChatWireMessage,
   ProjectSnapshot,
+  ScheduledTask,
 } from "../types";
 
 interface Props {
@@ -347,6 +348,9 @@ function ChatTranscript({
             // best-effort live overlay) and refresh the sidebar lists.
             loadDetailRef.current();
             onTurnSettledRef.current();
+            // A turn may have just armed a new follow-up, or a fired one just
+            // completed — refresh the chips either way.
+            refreshFollowupsRef.current();
           } else {
             // The live feed dropped (or the turn failed) — the daemon may still
             // be running and hasn't persisted the final transcript yet.
@@ -366,6 +370,44 @@ function ChatTranscript({
       if (settlePollRef.current) settlePollRef.current.cancelled = true;
     };
   }, [chatId]);
+
+  // Subscribe to this chat's agent-initiated turns (scheduled follow-ups). They
+  // arrive on the same `chat-stream` bus as user turns, so the listener above
+  // renders them; we just have to open/close the subscription with the chat.
+  useEffect(() => {
+    invoke("subscribe_chat_events", { id: chatId }).catch((e) =>
+      reportError("subscribe_chat_events", e),
+    );
+    return () => {
+      invoke("stop_chat_events").catch(() => {});
+    };
+  }, [chatId, reportError]);
+
+  // Pending follow-ups scheduled for this chat, shown as dismissible chips.
+  const [followups, setFollowups] = useState<ScheduledTask[]>([]);
+  const refreshFollowups = useCallback(() => {
+    invoke<ScheduledTask[]>("list_scheduled_tasks")
+      .then((all) =>
+        setFollowups(
+          all.filter((t) => t.chat_id === chatId && t.status === "pending"),
+        ),
+      )
+      .catch(() => setFollowups([]));
+  }, [chatId]);
+  const refreshFollowupsRef = useRef(refreshFollowups);
+  refreshFollowupsRef.current = refreshFollowups;
+  useEffect(() => {
+    refreshFollowups();
+  }, [refreshFollowups]);
+
+  const cancelFollowup = useCallback(
+    (id: string) => {
+      invoke("cancel_scheduled_task", { id })
+        .then(refreshFollowups)
+        .catch((e) => reportError("cancel_scheduled_task", e));
+    },
+    [refreshFollowups, reportError],
+  );
 
   // Autoscroll on any state change that adds visible content.
   useEffect(() => {
@@ -428,6 +470,28 @@ function ChatTranscript({
         )}
       </div>
 
+      {followups.length > 0 && (
+        <div className="px-4 pt-2 flex flex-wrap gap-1.5">
+          {followups.map((f) => (
+            <span
+              key={f.id}
+              className="inline-flex items-center gap-1.5 max-w-full px-2 py-1 text-[11px] bg-accent/15 text-accent-light rounded"
+              title={`Runs ${new Date(f.run_at).toLocaleString()} — ${f.task}`}
+            >
+              <span className="shrink-0">⏰ follow-up {relativeTime(f.run_at)}</span>
+              <span className="truncate opacity-80">{f.task}</span>
+              <button
+                onClick={() => cancelFollowup(f.id)}
+                className="shrink-0 text-accent-light/70 hover:text-accent-light leading-none"
+                title="Cancel follow-up"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="px-4 py-3 border-t border-surface-3 bg-surface-1">
         <form
           onSubmit={(e) => {
@@ -461,6 +525,15 @@ function ChatTranscript({
       </div>
     </div>
   );
+}
+
+/// Compact "in ~5m" / "in ~2h" label for a future run time; "now" once due.
+function relativeTime(iso: string): string {
+  const secs = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
+  if (secs <= 0) return "now";
+  if (secs < 90) return `in ${secs}s`;
+  if (secs < 90 * 60) return `in ~${Math.round(secs / 60)}m`;
+  return `in ~${Math.round(secs / 3600)}h`;
 }
 
 function TurnCard({ turn }: { turn: Turn }) {
