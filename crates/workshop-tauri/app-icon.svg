@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#28313f"/>
+      <stop offset="0.55" stop-color="#1c2330"/>
+      <stop offset="1"   stop-color="#141a24"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.36" r="0.7">
+      <stop offset="0"    stop-color="#4d6a9c" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#4d6a9c" stop-opacity="0.10"/>
+      <stop offset="1"    stop-color="#4d6a9c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfe6ef"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fa9d6"/>
+      <stop offset="1" stop-color="#4d6a9c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="205" ry="205" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="205" ry="205" fill="url(#glow)"/>
+  <rect x="4" y="4" width="1016" height="1016" rx="201" ry="201" fill="none"
+        stroke="#3a465a" stroke-opacity="0.6" stroke-width="2"/>
+
+  <!-- gear -->
+  <g>
+    <path d="M 803.09 439.42 L 874.47 428.32 L 874.47 595.68 L 803.09 584.58 L 781.64 643.51 L 843.45 680.88 L 735.88 809.09 L 688.34 754.71 L 634.02 786.06 L 657.35 854.43 L 492.53 883.49 L 491.07 811.27 L 429.31 800.38 L 403.24 867.75 L 258.30 784.06 L 303.60 727.80 L 263.29 679.76 L 200.01 714.61 L 142.77 557.34 L 213.64 543.36 L 213.64 480.64 L 142.77 466.66 L 200.01 309.39 L 263.29 344.24 L 303.60 296.20 L 258.30 239.94 L 403.24 156.25 L 429.31 223.62 L 491.07 212.73 L 492.53 140.51 L 657.35 169.57 L 634.02 237.94 L 688.34 269.29 L 735.88 214.91 L 843.45 343.12 L 781.64 380.49 Z" fill="url(#steel)" stroke="#c4cede" stroke-width="3" stroke-linejoin="round"/>
+    <!-- bore (shows background) -->
+    <circle cx="512.0" cy="512.0" r="150" fill="#1a212d"/>
+    <circle cx="512.0" cy="512.0" r="150" fill="none" stroke="#3a465a" stroke-width="4"/>
+    <!-- metalcraft node mark in the hub -->
+    <g stroke="#8fa9d6" stroke-width="11" stroke-linecap="round">
+      <line x1="512.0" y1="424.0" x2="600.0" y2="512.0"/>
+      <line x1="600.0" y1="512.0" x2="512.0" y2="600.0"/>
+      <line x1="512.0" y1="600.0" x2="424.0" y2="512.0"/>
+      <line x1="424.0" y1="512.0" x2="512.0" y2="424.0"/>
+      <line x1="512.0" y1="424.0" x2="512.0" y2="600.0"/>
+    </g>
+    <circle cx="512.0"    cy="424.0"    r="17" fill="#cdd9ef"/>
+    <circle cx="600.0"  cy="512.0"  r="17" fill="#cdd9ef"/>
+    <circle cx="512.0" cy="600.0" r="17" fill="#cdd9ef"/>
+    <circle cx="424.0"   cy="512.0"   r="17" fill="#cdd9ef"/>
+    <circle cx="512.0" cy="512.0" r="24" fill="url(#accent)"/>
+  </g>
+</svg>
