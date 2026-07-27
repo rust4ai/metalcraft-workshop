@@ -317,27 +317,24 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
           Save
         </button>
         {!isNew && (
-          <>
-            <button
-              onClick={() => setSidebarTab("run")}
-              disabled={running}
-              className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded disabled:opacity-40"
-            >
-              {running ? "Running…" : "Run"}
-            </button>
-            <button
-              onClick={remove}
-              className="px-3 py-1 bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs rounded"
-            >
-              Delete
-            </button>
-          </>
+          <button
+            onClick={remove}
+            className="px-3 py-1 bg-red-900/40 hover:bg-red-900/60 text-red-200 text-xs rounded"
+          >
+            Delete
+          </button>
         )}
         {savedAt && <span className="text-xs text-green-400">Saved.</span>}
       </div>
 
       {runResult && (
-        <RunResultPanel result={runResult} pauseRun={pauseRun} running={running} onResume={resumeRun} />
+        <RunResultPanel
+          result={runResult}
+          pauseRun={pauseRun}
+          running={running}
+          onResume={resumeRun}
+          onViewSession={sessions[0] ? () => onGoToSession(sessions[0].id) : undefined}
+        />
       )}
 
       {validationErrors.length > 0 && (
@@ -1429,17 +1426,28 @@ function RunResultPanel({
   pauseRun,
   running,
   onResume,
+  onViewSession,
 }: {
   result: RunFlowResult;
   pauseRun: FlowRun | null;
   running: boolean;
   onResume: (runId: string, handle: string) => void;
+  onViewSession?: () => void;
 }) {
+  const sessionLink = onViewSession && (
+    <button onClick={onViewSession} className="text-accent hover:underline whitespace-nowrap">
+      View session logs ↗
+    </button>
+  );
+
   // v1 legacy shape: a flat prompts array.
   if (result.prompts && result.prompts.length > 0 && !result.run_id) {
     return (
       <div className="px-4 py-2 bg-surface-1 border-b border-surface-3 text-xs">
-        <div className="font-semibold mb-1 text-gray-300">Run results — {result.prompts.length} prompt(s)</div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-semibold text-gray-300">Run results — {result.prompts.length} prompt(s)</span>
+          {sessionLink}
+        </div>
         <ul className="space-y-1">
           {result.prompts.map((p) => (
             <li key={p.prompt_index} className={p.status === "completed" ? "text-green-300" : p.status === "interrupted" ? "text-amber-300" : "text-red-300"}>
@@ -1462,6 +1470,7 @@ function RunResultPanel({
         <span className="font-semibold text-gray-300">Run</span>
         <span className={`font-semibold uppercase ${statusColor}`}>{status}</span>
         {result.run_id && <span className="font-mono text-gray-500">{result.run_id.slice(0, 8)}</span>}
+        {sessionLink && <span className="ml-auto">{sessionLink}</span>}
       </div>
 
       {result.steps && result.steps.length > 0 && (
