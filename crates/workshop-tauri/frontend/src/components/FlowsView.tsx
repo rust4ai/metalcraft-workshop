@@ -800,8 +800,73 @@ function coerceInput(spec: FlowInputSpec, raw: unknown): unknown {
     const n = Number(raw);
     return Number.isNaN(n) ? raw : n;
   }
-  if (spec.type === "boolean") return Boolean(raw);
+  if (spec.type === "boolean") return raw === true;
   return raw;
+}
+
+// Re-coerce an existing default when an input's declared type changes, so the
+// stored default always matches the type (no stale "24"-as-string).
+function coerceDefaultForType(v: unknown, type: string): unknown {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (type === "integer" || type === "number") {
+    const n = Number(v);
+    return Number.isNaN(n) ? undefined : n;
+  }
+  if (type === "boolean") return v === true || v === "true";
+  return String(v);
+}
+
+// One control that renders per declared type and emits the correct JSON type.
+// Shared by the entry-inputs editor (a default value) and the Run form (a value
+// for a run). Booleans use a checkbox; integers a number input (→ number);
+// everything else text. Empty → undefined so "required" checks and default
+// fallback work.
+function TypedValueInput({
+  type,
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  type?: string;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  if (type === "boolean") {
+    return (
+      <input type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
+    );
+  }
+  const cls =
+    className ?? "w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono";
+  const text = value === undefined || value === null ? "" : String(value);
+  if (type === "integer" || type === "number") {
+    return (
+      <input
+        type="number"
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "") return onChange(undefined);
+          const n = Number(raw);
+          onChange(Number.isNaN(n) ? raw : n);
+        }}
+        className={cls}
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+      className={cls}
+    />
+  );
 }
 
 function RunTab({
@@ -870,22 +935,14 @@ function RunTab({
                   {spec.required && <span className="text-red-400">required</span>}{" "}
                   <span className="text-gray-600 font-mono">{spec.type ?? "string"}</span>
                 </span>
-                {spec.type === "boolean" ? (
-                  <input
-                    type="checkbox"
-                    checked={Boolean(v)}
-                    onChange={(e) => set(e.target.checked)}
-                  />
-                ) : (
-                  <input
-                    type={spec.type === "integer" || spec.type === "number" ? "number" : "text"}
-                    value={v === undefined || v === null ? "" : String(v)}
-                    onChange={(e) => set(e.target.value)}
-                    className={`w-full px-2 py-1 bg-surface-2 border rounded text-sm font-mono ${
-                      isMissing ? "border-red-800" : "border-surface-3"
-                    }`}
-                  />
-                )}
+                <TypedValueInput
+                  type={spec.type}
+                  value={v}
+                  onChange={set}
+                  className={`w-full px-2 py-1 bg-surface-2 border rounded text-sm font-mono ${
+                    isMissing ? "border-red-800" : "border-surface-3"
+                  }`}
+                />
               </label>
             );
           })}
@@ -1056,7 +1113,13 @@ function EntryInputsEditor({
           <div className="flex gap-1 items-center">
             <select
               value={spec.type ?? "string"}
-              onChange={(e) => setRow(i, name, { ...spec, type: e.target.value })}
+              onChange={(e) =>
+                setRow(i, name, {
+                  ...spec,
+                  type: e.target.value,
+                  default: coerceDefaultForType(spec.default, e.target.value),
+                })
+              }
               className="px-1 py-1 bg-surface-1 border border-surface-3 rounded text-xs"
             >
               {["string", "integer", "boolean"].map((t) => (
@@ -1072,17 +1135,16 @@ function EntryInputsEditor({
               required
             </label>
           </div>
-          <input
-            value={spec.default === undefined ? "" : String(spec.default)}
-            onChange={(e) =>
-              setRow(i, name, {
-                ...spec,
-                default: e.target.value === "" ? undefined : e.target.value,
-              })
-            }
-            placeholder="default (optional)"
-            className="w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono"
-          />
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-500 w-12 shrink-0">default</span>
+            <TypedValueInput
+              type={spec.type}
+              value={spec.default}
+              onChange={(val) => setRow(i, name, { ...spec, default: val })}
+              placeholder="optional"
+              className="flex-1 px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono"
+            />
+          </div>
         </div>
       ))}
       <button className="text-xs text-accent" onClick={add}>
