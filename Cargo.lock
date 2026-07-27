@@ -1973,6 +1973,8 @@ dependencies = [
 [[package]]
 name = "metalcraft-flows"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "36cdf98a9f48fa852b98e8bfa868b1d51d1c03c1c2bb220dd3f45506633fa87e"
 dependencies = [
  "regex",
  "serde",
@@ -5240,7 +5242,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5262,7 +5264,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-tauri"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",

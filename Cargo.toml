@@ -22,8 +22,7 @@ futures-util = "0.3"
 async-stream = "0.3"
 bytes = "1"
 
-# Local flows-v2 crate during the v2 upgrade; switch to `= "0.2.0"` once published.
-metalcraft-flows = { path = "../metalcraft-flows" }
+metalcraft-flows = "0.2.0"
 
 [profile.release]
 strip = true
