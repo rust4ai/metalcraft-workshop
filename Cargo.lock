@@ -1972,9 +1972,9 @@ dependencies = [
 
 [[package]]
 name = "metalcraft-flows"
-version = "0.1.0"
-source = "git+https://github.com/rust4ai/metalcraft-flows?rev=a6e8e2e55853d8138fe0fbf89b6a0fd37877cf1d#a6e8e2e55853d8138fe0fbf89b6a0fd37877cf1d"
+version = "0.2.0"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
 ]

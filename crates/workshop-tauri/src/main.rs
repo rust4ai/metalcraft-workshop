@@ -473,6 +473,39 @@ async fn run_flow(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn resume_flow_run(
+    run_id: String,
+    handle: String,
+    data: Option<serde_json::Value>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<RunFlowResult, String> {
+    let conn = require_connection(&state)?;
+    conn.resume_flow_run(&run_id, &handle, data)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_flow_run(
+    run_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    conn.get_flow_run(&run_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_flow_runs(
+    flow_id: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_flow_runs(flow_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ---- Chats ----
 
 #[tauri::command]
@@ -972,6 +1005,9 @@ fn main() {
             list_flow_templates,
             get_flow_template,
             run_flow,
+            resume_flow_run,
+            get_flow_run,
+            list_flow_runs,
             list_chats,
             get_chat,
             create_chat,

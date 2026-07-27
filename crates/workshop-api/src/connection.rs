@@ -115,6 +115,24 @@ pub trait ProjectConnection: Send + Sync {
         model_name: Option<&str>,
     ) -> anyhow::Result<RunFlowResult>;
 
+    /// Resume a paused v2 flow run by supplying a handle (an approval decision,
+    /// or `"after"` for a wait) and optional `_last` data.
+    async fn resume_flow_run(
+        &self,
+        run_id: &str,
+        handle: &str,
+        data: Option<serde_json::Value>,
+    ) -> anyhow::Result<RunFlowResult>;
+
+    /// Fetch one persisted flow run (status / pause info / steps / variables).
+    async fn get_flow_run(&self, run_id: &str) -> anyhow::Result<serde_json::Value>;
+
+    /// List persisted flow runs, optionally filtered by flow id.
+    async fn list_flow_runs(
+        &self,
+        flow_id: Option<&str>,
+    ) -> anyhow::Result<Vec<serde_json::Value>>;
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>>;
     async fn get_chat(&self, id: &str) -> anyhow::Result<ChatDetail>;
     async fn create_chat(
@@ -283,6 +301,23 @@ impl ProjectConnection for LocalConnection {
         _model_name: Option<&str>,
     ) -> anyhow::Result<RunFlowResult> {
         Err(chat::not_supported_in_local_mode("Run flow"))
+    }
+    async fn resume_flow_run(
+        &self,
+        _run_id: &str,
+        _handle: &str,
+        _data: Option<serde_json::Value>,
+    ) -> anyhow::Result<RunFlowResult> {
+        Err(chat::not_supported_in_local_mode("Resume flow run"))
+    }
+    async fn get_flow_run(&self, _run_id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Flow run status"))
+    }
+    async fn list_flow_runs(
+        &self,
+        _flow_id: Option<&str>,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        Err(chat::not_supported_in_local_mode("List flow runs"))
     }
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
         Err(chat::not_supported_in_local_mode("Chat"))
@@ -819,6 +854,50 @@ impl ProjectConnection for RemoteConnection {
             "POST run flow",
         )
         .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn resume_flow_run(
+        &self,
+        run_id: &str,
+        handle: &str,
+        data: Option<serde_json::Value>,
+    ) -> anyhow::Result<RunFlowResult> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            handle: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            data: Option<serde_json::Value>,
+        }
+        let resp = ok_or_err(
+            self.post(&format!("/api/v1/flow-runs/{run_id}/resume"))
+                .json(&Body { handle, data })
+                .send()
+                .await?,
+            "POST resume flow run",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn get_flow_run(&self, run_id: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/flow-runs/{run_id}")).send().await?,
+            "GET flow run",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn list_flow_runs(
+        &self,
+        flow_id: Option<&str>,
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let path = match flow_id {
+            Some(f) => format!("/api/v1/flow-runs?flow_id={f}"),
+            None => "/api/v1/flow-runs".to_string(),
+        };
+        let resp = ok_or_err(self.get(&path).send().await?, "GET flow runs").await?;
         Ok(resp.json().await?)
     }
 

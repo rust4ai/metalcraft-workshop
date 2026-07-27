@@ -90,10 +90,25 @@ pub enum ChatEvent {
     },
 }
 
+/// Result of running a flow. Carries both the legacy v1 shape (`prompts`) and
+/// the v2 state-machine shape (`run_id`/`status`/`steps`/`variables`); which set
+/// is populated depends on the flow's `spec_version`. A `status == "paused"`
+/// v2 run can be continued with `resume_flow_run`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunFlowResult {
     pub flow_id: String,
+    // v1 (legacy linear runner)
+    #[serde(default)]
     pub prompts: Vec<RunFlowPromptResult>,
+    // v2 (state-machine executor)
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub steps: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub variables: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

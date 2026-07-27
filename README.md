@@ -1,8 +1,8 @@
 # metalcraft-workshop
 
-[![CI](https://github.com/ethereumdegen/metalcraft-workshop/actions/workflows/ci.yml/badge.svg)](https://github.com/ethereumdegen/metalcraft-workshop/actions/workflows/ci.yml)
-[![Release](https://github.com/ethereumdegen/metalcraft-workshop/actions/workflows/release.yml/badge.svg)](https://github.com/ethereumdegen/metalcraft-workshop/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/ethereumdegen/metalcraft-workshop?include_prereleases&sort=semver)](https://github.com/ethereumdegen/metalcraft-workshop/releases/latest)
+[![CI](https://github.com/rust4ai/metalcraft-workshop/actions/workflows/ci.yml/badge.svg)](https://github.com/rust4ai/metalcraft-workshop/actions/workflows/ci.yml)
+[![Release](https://github.com/rust4ai/metalcraft-workshop/actions/workflows/release.yml/badge.svg)](https://github.com/rust4ai/metalcraft-workshop/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/rust4ai/metalcraft-workshop?include_prereleases&sort=semver)](https://github.com/rust4ai/metalcraft-workshop/releases/latest)
 
 A Tauri desktop app for viewing and editing
 [metalcraft-agent](https://github.com/rust4ai/metalcraft) project files —
@@ -27,31 +27,52 @@ Point it at a `metalcraft-agent` project directory and you get:
   compactions and config changes. New turn files appear in real time as the
   agent runs (filesystem watcher).
 
-## Download
+## Getting started
 
-Pre-built binaries for Linux, macOS (Intel + Apple Silicon), and Windows are
-attached to each release:
+The Workshop is a **viewer/editor for a `metalcraft-agent` project** — a
+directory that holds `personas/`, `skills/`, `flows/`, and diagnostics
+`logs/`. You point the app at such a directory (or launch it and pick one
+from the file dialog), so have a metalcraft-agent project on hand. There are
+two ways to run it.
 
-→ **[Latest release](https://github.com/ethereumdegen/metalcraft-workshop/releases/latest)**
+### Option 1 — download a prebuilt binary (no toolchain required)
+
+The easiest path for most people. Every [release](https://github.com/rust4ai/metalcraft-workshop/releases/latest)
+attaches binaries for Linux, macOS (Intel + Apple Silicon), and Windows:
+
+→ **[Latest release](https://github.com/rust4ai/metalcraft-workshop/releases/latest)**
 
 Unpack the archive for your platform and run the `metalcraft-workshop`
 binary. SHA256 checksums for every artifact are in
 `checksums-<tag>.sha256` on the release page.
 
-## Run from source
+### Option 2 — run from source
 
-### Linux prerequisites
+You need:
+
+- **Rust** — a stable toolchain (install via [rustup](https://rustup.rs))
+- **Node 20+** — the UI is a Vite/React bundle that is compiled into the app,
+  so Node is required even though the app itself is a native binary
+- **Linux only** — the WebKit/GTK system libraries below (macOS just needs the
+  Xcode command-line tools; Windows needs nothing extra):
+
+  ```bash
+  sudo apt install \
+    libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+    libdbus-1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+    pkg-config
+  ```
+
+Then use the `run.sh` helper — it installs the frontend deps (first run
+only), builds the bundle, and compiles + launches the app:
 
 ```bash
-sudo apt install \
-  libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
-  libdbus-1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
-  pkg-config
+./run.sh                      # debug build, opens the project picker
+./run.sh --release            # optimized build
+./run.sh /path/to/my-agent    # auto-open that agent project on launch
 ```
 
-Plus a stable Rust toolchain and Node 20+.
-
-### Build & launch
+Prefer to drive the steps yourself? `run.sh` is just a wrapper around:
 
 ```bash
 cd crates/workshop-tauri/frontend
