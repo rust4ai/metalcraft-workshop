@@ -335,9 +335,43 @@ export interface RunFlowPromptResult {
   error: string | null;
 }
 
+export interface FlowStep {
+  node_id: string;
+  node_type: string;
+  outcome: string; // advanced | routed:<h> | completed | failed | paused:<reason>
+  detail?: string | null;
+}
+
+// Carries both the legacy v1 shape (`prompts`) and the v2 state-machine shape
+// (`run_id`/`status`/`steps`/`variables`). A v2 run with status "paused" can be
+// continued via the `resume_flow_run` command.
 export interface RunFlowResult {
   flow_id: string;
-  prompts: RunFlowPromptResult[];
+  prompts?: RunFlowPromptResult[];
+  run_id?: string;
+  status?: string; // "completed" | "failed" | "paused"
+  steps?: FlowStep[];
+  variables?: Record<string, unknown>;
+}
+
+export interface FlowRunPause {
+  reason: string; // "approval" | "wait"
+  resume_handles: string[];
+  message?: string | null;
+  wake_at?: string | null;
+}
+
+// A persisted flow run (from get_flow_run / list_flow_runs).
+export interface FlowRun {
+  id: string;
+  flow_id: string;
+  status: string;
+  current_node_id: string;
+  variables: Record<string, unknown>;
+  pause?: FlowRunPause | null;
+  steps: FlowStep[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ChatSummary {

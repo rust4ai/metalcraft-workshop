@@ -19,10 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useReportError } from "../hooks/useReportError";
-import EntryNode from "./flow/EntryNode";
-import PromptNode from "./flow/PromptNode";
-import BranchNode from "./flow/BranchNode";
-import BranchToolNode from "./flow/BranchToolNode";
+import V2Node from "./flow/V2Node";
 import type {
   ProjectSnapshot,
   SavedFlow,
@@ -31,16 +28,28 @@ import type {
   FlowTemplate,
   FlowTemplateSummary,
   RunFlowResult,
+  FlowRun,
 } from "../types";
 
-// Defined at module scope so React Flow doesn't re-register the types each
-// render — passing a freshly-created object would reset the canvas state.
-const NODE_KIND_COMPONENTS: NodeTypes = {
-  entry: EntryNode,
-  prompt: PromptNode,
-  branch: BranchNode,
-  branch_tool: BranchToolNode,
-};
+// Every node type renders through one data-driven component (it picks the right
+// handles per type). Defined at module scope so React Flow doesn't re-register
+// the types each render.
+const NODE_KIND_COMPONENTS: NodeTypes = Object.fromEntries(
+  [
+    "entry",
+    "prompt",
+    "conditional",
+    "branch",
+    "set_variable",
+    "tool",
+    "http",
+    "sub_agent",
+    "approval",
+    "wait",
+    "end",
+    "branch_tool",
+  ].map((t) => [t, V2Node]),
+);
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -48,7 +57,21 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-const NODE_TYPES = ["entry", "prompt", "branch", "branch_tool"] as const;
+// Types offered by the "+ Add node" palette (entry is auto-created, at most one).
+const ADDABLE_NODE_TYPES = [
+  "prompt",
+  "conditional",
+  "branch",
+  "tool",
+  "http",
+  "sub_agent",
+  "set_variable",
+  "approval",
+  "wait",
+  "end",
+] as const;
+// Full set for the node-type dropdown (includes entry).
+const ALL_NODE_TYPES = ["entry", ...ADDABLE_NODE_TYPES] as const;
 
 export default function FlowsView({ selectedId, onSelect }: Props) {
   const [flow, setFlow] = useState<SavedFlow | null>(null);
@@ -59,13 +82,49 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunFlowResult | null>(null);
+  const [pauseRun, setPauseRun] = useState<FlowRun | null>(null);
   const reportError = useReportError();
   const isNew = selectedId === "__new__";
+
+  // After a run/resume, if the v2 run is paused, fetch its pause details so we
+  // can offer resume options; otherwise clear them.
+  const processRunResult = useCallback(
+    async (result: RunFlowResult) => {
+      setRunResult(result);
+      if (result.run_id && result.status === "paused") {
+        try {
+          setPauseRun(await invoke<FlowRun>("get_flow_run", { runId: result.run_id }));
+        } catch (e) {
+          reportError("get_flow_run", e);
+          setPauseRun(null);
+        }
+      } else {
+        setPauseRun(null);
+      }
+    },
+    [reportError],
+  );
+
+  const resumeRun = useCallback(
+    async (runId: string, handle: string) => {
+      setRunning(true);
+      try {
+        await processRunResult(await invoke<RunFlowResult>("resume_flow_run", { runId, handle }));
+      } catch (e) {
+        reportError("resume_flow_run", e);
+      } finally {
+        setRunning(false);
+      }
+    },
+    [processRunResult, reportError],
+  );
 
   useEffect(() => {
     setSavedAt(null);
     setValidationErrors([]);
     setSelectedNodeId(null);
+    setRunResult(null);
+    setPauseRun(null);
     setRunResult(null);
     if (!selectedId) {
       setFlow(null);
@@ -203,11 +262,11 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
               onClick={async () => {
                 setRunning(true);
                 setRunResult(null);
+                setPauseRun(null);
                 try {
-                  const result = await invoke<RunFlowResult>("run_flow", {
-                    id: selectedId,
-                  });
-                  setRunResult(result);
+                  await processRunResult(
+                    await invoke<RunFlowResult>("run_flow", { id: selectedId }),
+                  );
                 } catch (e) {
                   reportError("run_flow", e);
                 } finally {
@@ -231,29 +290,7 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
       </div>
 
       {runResult && (
-        <div className="px-4 py-2 bg-surface-1 border-b border-surface-3 text-xs">
-          <div className="font-semibold mb-1 text-gray-300">
-            Run results — {runResult.prompts.length} prompt(s)
-          </div>
-          <ul className="space-y-1">
-            {runResult.prompts.map((p) => (
-              <li
-                key={p.prompt_index}
-                className={
-                  p.status === "completed"
-                    ? "text-green-300"
-                    : p.status === "interrupted"
-                      ? "text-amber-300"
-                      : "text-red-300"
-                }
-              >
-                <span className="font-mono">[{p.prompt_index}]</span> {p.status}
-                {p.answer && <> — {truncate(p.answer, 200)}</>}
-                {p.error && <> — {truncate(p.error, 200)}</>}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <RunResultPanel result={runResult} pauseRun={pauseRun} running={running} onResume={resumeRun} />
       )}
 
       {validationErrors.length > 0 && (
@@ -565,7 +602,7 @@ function NodeInspector({
       <div className="mb-4">
         <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Add node</p>
         <div className="flex flex-wrap gap-1.5">
-          {NODE_TYPES.map((k) => (
+          {ADDABLE_NODE_TYPES.map((k) => (
             <button
               key={k}
               onClick={() => onAddNode(k)}
@@ -594,7 +631,7 @@ function NodeInspector({
               onChange={(e) => onChange({ ...node, node_type: e.target.value })}
               className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
             >
-              {NODE_TYPES.map((k) => (
+              {ALL_NODE_TYPES.map((k) => (
                 <option key={k} value={k}>
                   {k}
                 </option>
@@ -602,15 +639,7 @@ function NodeInspector({
             </select>
           </label>
 
-          {node.node_type === "entry" && (
-            <EntryFields node={node} onChange={onChange} />
-          )}
-          {node.node_type === "prompt" && (
-            <PromptFields node={node} onChange={onChange} />
-          )}
-          {(node.node_type === "branch" || node.node_type === "branch_tool") && (
-            <BranchFields node={node} onChange={onChange} />
-          )}
+          <NodeFields node={node} onChange={onChange} />
 
           <details className="text-xs">
             <summary className="cursor-pointer text-gray-500">Raw data JSON</summary>
@@ -686,34 +715,190 @@ function EntryFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNod
   );
 }
 
-function PromptFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNode) => void }) {
-  const d = node.data as Record<string, unknown>;
+// ---- shared field inputs ----
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono,
+  rows,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+  rows?: number;
+}) {
+  const cls = `w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm ${mono ? "font-mono" : ""}`;
   return (
     <label className="block">
-      <span className="block text-xs text-gray-500 mb-1">Prompt</span>
-      <textarea
-        value={(d.prompt as string) ?? ""}
-        onChange={(e) => onChange({ ...node, data: { ...d, prompt: e.target.value } })}
-        rows={6}
-        className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
-      />
+      <span className="block text-xs text-gray-500 mb-1">{label}</span>
+      {rows ? (
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={rows} className={cls} placeholder={placeholder} />
+      ) : (
+        <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={cls} placeholder={placeholder} />
+      )}
     </label>
   );
 }
 
-function BranchFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNode) => void }) {
+/** Dispatch a node to the field editor for its type. Any node also has the
+ *  "Raw data JSON" editor below as a universal fallback. */
+function NodeFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNode) => void }) {
   const d = node.data as Record<string, unknown>;
+  const set = (patch: Record<string, unknown>) => onChange({ ...node, data: { ...d, ...patch } });
+  const str = (k: string) => (d[k] as string) ?? "";
+
+  switch (node.node_type) {
+    case "entry":
+      return <EntryFields node={node} onChange={onChange} />;
+    case "prompt":
+      return (
+        <>
+          <Field label="Prompt" value={str("prompt")} onChange={(v) => set({ prompt: v })} rows={5} />
+          <Field label="Persona (optional)" value={str("persona")} onChange={(v) => set({ persona: v })} placeholder="e.g. github-agent" />
+          <Field label="Store answer in variable (optional)" value={str("output_var")} onChange={(v) => set({ output_var: v })} placeholder="e.g. summary" />
+        </>
+      );
+    case "conditional":
+      return <ConditionalFields d={d} set={set} />;
+    case "branch":
+      return <BranchFields d={d} set={set} />;
+    case "set_variable":
+      return (
+        <>
+          <Field label="Variable" value={str("variable")} onChange={(v) => set({ variable: v })} />
+          <Field label="Value (literal or {{template}})" value={str("value")} onChange={(v) => set({ value: v })} placeholder="{{_last}}" />
+          <Field label="…or copy from _last path" value={str("from")} onChange={(v) => set({ from: v })} placeholder="e.g. data.id" mono />
+        </>
+      );
+    case "tool":
+      return (
+        <>
+          <Field label="Tool name" value={str("tool_name")} onChange={(v) => set({ tool_name: v })} mono />
+          <Field label="Args (JSON)" value={jsonStr(d.args)} onChange={(v) => setJson(set, "args", v)} rows={4} mono />
+          <Field label="Store result in variable (optional)" value={str("output_var")} onChange={(v) => set({ output_var: v })} />
+        </>
+      );
+    case "http":
+      return (
+        <>
+          <Field label="Method" value={str("method") || "GET"} onChange={(v) => set({ method: v })} mono />
+          <Field label="URL" value={str("url")} onChange={(v) => set({ url: v })} mono placeholder="https://…" />
+          <Field label="Store response in variable (optional)" value={str("output_var")} onChange={(v) => set({ output_var: v })} />
+        </>
+      );
+    case "sub_agent":
+      return (
+        <>
+          <Field label="Task" value={str("task")} onChange={(v) => set({ task: v })} rows={4} />
+          <Field label="Persona (optional)" value={str("persona")} onChange={(v) => set({ persona: v })} />
+          <Field label="Store result in variable (optional)" value={str("output_var")} onChange={(v) => set({ output_var: v })} />
+        </>
+      );
+    case "approval":
+      return (
+        <>
+          <Field label="Message" value={str("message")} onChange={(v) => set({ message: v })} rows={3} />
+          <Field
+            label="Choices (comma-separated)"
+            value={((d.choices as string[]) ?? ["approve", "reject"]).join(", ")}
+            onChange={(v) => set({ choices: v.split(",").map((s) => s.trim()).filter(Boolean) })}
+          />
+        </>
+      );
+    case "wait":
+      return (
+        <>
+          <Field label="Duration (e.g. 30m, 2h, 1d)" value={str("duration")} onChange={(v) => set({ duration: v })} />
+          <Field label="…or until (RFC-3339)" value={str("until")} onChange={(v) => set({ until: v })} mono placeholder="2026-08-01T09:00:00Z" />
+        </>
+      );
+    case "end":
+      return <Field label="Status (optional)" value={str("status")} onChange={(v) => set({ status: v })} placeholder="completed" />;
+    default:
+      return null;
+  }
+}
+
+function ConditionalFields({ d, set }: { d: Record<string, unknown>; set: (p: Record<string, unknown>) => void }) {
+  const conds = (d.conditions as Record<string, unknown>[]) ?? [];
+  const update = (i: number, patch: Record<string, unknown>) => {
+    const next = conds.map((c, j) => (j === i ? { ...c, ...patch } : c));
+    set({ conditions: next });
+  };
+  const OPS = ["equals", "not_equals", "contains", "starts_with", "ends_with", "gt", "lt", "exists", "truthy", "matches"];
   return (
-    <label className="block">
-      <span className="block text-xs text-gray-500 mb-1">Condition</span>
-      <input
-        type="text"
-        value={(d.condition as string) ?? ""}
-        onChange={(e) => onChange({ ...node, data: { ...d, condition: e.target.value } })}
-        className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
-      />
-    </label>
+    <div className="space-y-2">
+      <span className="block text-xs text-gray-500">Conditions (first match wins)</span>
+      {conds.map((c, i) => (
+        <div key={i} className="p-2 bg-surface-2 rounded space-y-1">
+          <input className="w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono" placeholder="variable (e.g. _last, triage.severity)" value={(c.variable as string) ?? ""} onChange={(e) => update(i, { variable: e.target.value })} />
+          <div className="flex gap-1">
+            <select className="px-1 py-1 bg-surface-1 border border-surface-3 rounded text-xs" value={(c.operator as string) ?? "equals"} onChange={(e) => update(i, { operator: e.target.value })}>
+              {OPS.map((o) => <option key={o}>{o}</option>)}
+            </select>
+            <input className="flex-1 px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs" placeholder="value" value={valStr(c.value)} onChange={(e) => update(i, { value: coerce(e.target.value) })} />
+          </div>
+          <div className="flex gap-1 items-center">
+            <input className="flex-1 px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs" placeholder="→ handle" value={(c.handle as string) ?? ""} onChange={(e) => update(i, { handle: e.target.value })} />
+            <button className="text-xs text-red-300 px-1" onClick={() => set({ conditions: conds.filter((_, j) => j !== i) })}>✕</button>
+          </div>
+        </div>
+      ))}
+      <button className="text-xs text-accent" onClick={() => set({ conditions: [...conds, { handle: "", variable: "_last", operator: "equals", value: "" }] })}>+ condition</button>
+      <Field label="Default handle" value={(d.default_handle as string) ?? ""} onChange={(v) => set({ default_handle: v })} placeholder="default" />
+    </div>
   );
+}
+
+function BranchFields({ d, set }: { d: Record<string, unknown>; set: (p: Record<string, unknown>) => void }) {
+  const outs = (d.outputs as Record<string, unknown>[]) ?? [];
+  const update = (i: number, patch: Record<string, unknown>) => set({ outputs: outs.map((o, j) => (j === i ? { ...o, ...patch } : o)) });
+  return (
+    <div className="space-y-2">
+      <Field label="Query (what the model decides)" value={(d.query as string) ?? ""} onChange={(v) => set({ query: v })} rows={3} />
+      <Field label="Persona (optional — grants tools)" value={(d.persona as string) ?? ""} onChange={(v) => set({ persona: v })} placeholder="e.g. weather-agent" />
+      <span className="block text-xs text-gray-500">Typed outputs (model picks one)</span>
+      {outs.map((o, i) => (
+        <div key={i} className="p-2 bg-surface-2 rounded space-y-1">
+          <div className="flex gap-1 items-center">
+            <input className="flex-1 px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono" placeholder="handle" value={(o.handle as string) ?? ""} onChange={(e) => update(i, { handle: e.target.value })} />
+            <button className="text-xs text-red-300 px-1" onClick={() => set({ outputs: outs.filter((_, j) => j !== i) })}>✕</button>
+          </div>
+          <input className="w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs" placeholder="description" value={(o.description as string) ?? ""} onChange={(e) => update(i, { description: e.target.value })} />
+          <input className="w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono" placeholder='schema JSON e.g. {"type":"integer"}' value={jsonStr(o.schema)} onChange={(e) => { try { update(i, { schema: JSON.parse(e.target.value) }); } catch { /* typing */ } }} />
+        </div>
+      ))}
+      <button className="text-xs text-accent" onClick={() => set({ outputs: [...outs, { handle: "", description: "", schema: { type: "string" } }] })}>+ output</button>
+      <Field label="Default handle" value={(d.default_handle as string) ?? ""} onChange={(v) => set({ default_handle: v })} placeholder="error" />
+    </div>
+  );
+}
+
+// small JSON helpers for the field editors
+function jsonStr(v: unknown): string {
+  return v == null ? "" : JSON.stringify(v);
+}
+function setJson(set: (p: Record<string, unknown>) => void, key: string, raw: string) {
+  try {
+    set({ [key]: raw.trim() === "" ? undefined : JSON.parse(raw) });
+  } catch {
+    /* ignore while typing */
+  }
+}
+function valStr(v: unknown): string {
+  return typeof v === "string" ? v : v == null ? "" : JSON.stringify(v);
+}
+// Coerce a condition value string to number/bool/string.
+function coerce(s: string): unknown {
+  if (s === "true") return true;
+  if (s === "false") return false;
+  if (s !== "" && !isNaN(Number(s))) return Number(s);
+  return s;
 }
 
 // ---- helpers ----
@@ -721,7 +906,7 @@ function BranchFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNo
 function blankFlow(): SavedFlow {
   const now = new Date().toISOString();
   return {
-    spec_version: "1",
+    spec_version: "2",
     id: `flow-${Math.random().toString(36).slice(2, 8)}`,
     name: "New flow",
     created_at: now,
@@ -751,9 +936,31 @@ function defaultDataFor(kind: string): Record<string, unknown> {
       return { schedule_type: "manual" };
     case "prompt":
       return { prompt: "" };
+    case "conditional":
+      return { conditions: [{ handle: "yes", variable: "_last", operator: "truthy" }], default_handle: "no" };
     case "branch":
-    case "branch_tool":
-      return { condition: "" };
+      return {
+        query: "",
+        outputs: [
+          { handle: "ok", description: "", schema: { type: "string" } },
+          { handle: "error", description: "could not complete", schema: { type: "string" } },
+        ],
+        default_handle: "error",
+      };
+    case "set_variable":
+      return { variable: "", value: "" };
+    case "tool":
+      return { tool_name: "", args: {} };
+    case "http":
+      return { method: "GET", url: "" };
+    case "sub_agent":
+      return { task: "" };
+    case "approval":
+      return { message: "", choices: ["approve", "reject"] };
+    case "wait":
+      return { duration: "1h" };
+    case "end":
+      return { status: "completed" };
     default:
       return {};
   }
@@ -776,6 +983,81 @@ function nodeLabel(n: FlowNode): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s;
+}
+
+function RunResultPanel({
+  result,
+  pauseRun,
+  running,
+  onResume,
+}: {
+  result: RunFlowResult;
+  pauseRun: FlowRun | null;
+  running: boolean;
+  onResume: (runId: string, handle: string) => void;
+}) {
+  // v1 legacy shape: a flat prompts array.
+  if (result.prompts && result.prompts.length > 0 && !result.run_id) {
+    return (
+      <div className="px-4 py-2 bg-surface-1 border-b border-surface-3 text-xs">
+        <div className="font-semibold mb-1 text-gray-300">Run results — {result.prompts.length} prompt(s)</div>
+        <ul className="space-y-1">
+          {result.prompts.map((p) => (
+            <li key={p.prompt_index} className={p.status === "completed" ? "text-green-300" : p.status === "interrupted" ? "text-amber-300" : "text-red-300"}>
+              <span className="font-mono">[{p.prompt_index}]</span> {p.status}
+              {p.answer && <> — {truncate(p.answer, 200)}</>}
+              {p.error && <> — {truncate(p.error, 200)}</>}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  // v2 state-machine shape: status + step trace + optional resume.
+  const status = result.status ?? "completed";
+  const statusColor = status === "completed" ? "text-green-300" : status === "paused" ? "text-amber-300" : "text-red-300";
+  return (
+    <div className="px-4 py-2 bg-surface-1 border-b border-surface-3 text-xs space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="font-semibold text-gray-300">Run</span>
+        <span className={`font-semibold uppercase ${statusColor}`}>{status}</span>
+        {result.run_id && <span className="font-mono text-gray-500">{result.run_id.slice(0, 8)}</span>}
+      </div>
+
+      {result.steps && result.steps.length > 0 && (
+        <ol className="space-y-0.5">
+          {result.steps.map((s, i) => (
+            <li key={i} className="text-gray-400">
+              <span className="font-mono text-gray-500">{s.node_type}</span> <span className="text-gray-300">{s.node_id}</span> — {s.outcome}
+              {s.detail && <> — {truncate(s.detail, 120)}</>}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {status === "paused" && pauseRun?.pause && (
+        <div className="p-2 bg-amber-900/20 border border-amber-800/40 rounded space-y-1.5">
+          <div className="text-amber-200">
+            Paused at <span className="font-mono">{pauseRun.current_node_id}</span> ({pauseRun.pause.reason})
+          </div>
+          {pauseRun.pause.message && <div className="text-gray-300">{pauseRun.pause.message}</div>}
+          <div className="flex flex-wrap gap-1.5">
+            {pauseRun.pause.resume_handles.map((h) => (
+              <button
+                key={h}
+                disabled={running}
+                onClick={() => onResume(pauseRun.id, h)}
+                className="px-2 py-1 bg-amber-700 hover:bg-amber-600 text-white rounded disabled:opacity-40"
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FlowTemplatePicker({
