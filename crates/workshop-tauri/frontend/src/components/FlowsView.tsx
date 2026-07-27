@@ -76,6 +76,23 @@ const ADDABLE_NODE_TYPES = [
 // Full set for the node-type dropdown (includes entry).
 const ALL_NODE_TYPES = ["entry", ...ADDABLE_NODE_TYPES] as const;
 
+type SidebarTab = "node" | "run" | "sessions";
+
+// One declared entry input (the flow's parameters).
+interface FlowInputSpec {
+  type?: string;
+  required?: boolean;
+  default?: unknown;
+}
+type FlowInputs = Record<string, FlowInputSpec>;
+
+// Read the entry node's declared inputs, if any.
+function entryInputsOf(flow: SavedFlow | null): FlowInputs {
+  const entry = flow?.flow.nodes.find((n) => n.node_type === "entry");
+  const inputs = (entry?.data as Record<string, unknown> | undefined)?.inputs;
+  return inputs && typeof inputs === "object" ? (inputs as FlowInputs) : {};
+}
+
 export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props) {
   const [flow, setFlow] = useState<SavedFlow | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -87,6 +104,7 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
   const [runResult, setRunResult] = useState<RunFlowResult | null>(null);
   const [pauseRun, setPauseRun] = useState<FlowRun | null>(null);
   const [sessions, setSessions] = useState<DiagnosticsSessionSummary[]>([]);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("node");
   const reportError = useReportError();
   const isNew = selectedId === "__new__";
 
@@ -143,6 +161,22 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
       }
     },
     [processRunResult, reportError],
+  );
+
+  const runFlow = useCallback(
+    async (inputs: Record<string, unknown>) => {
+      setRunning(true);
+      setRunResult(null);
+      setPauseRun(null);
+      try {
+        await processRunResult(await invoke<RunFlowResult>("run_flow", { id: selectedId, inputs }));
+      } catch (e) {
+        reportError("run_flow", e);
+      } finally {
+        setRunning(false);
+      }
+    },
+    [selectedId, processRunResult, reportError],
   );
 
   useEffect(() => {
@@ -285,20 +319,7 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
         {!isNew && (
           <>
             <button
-              onClick={async () => {
-                setRunning(true);
-                setRunResult(null);
-                setPauseRun(null);
-                try {
-                  await processRunResult(
-                    await invoke<RunFlowResult>("run_flow", { id: selectedId }),
-                  );
-                } catch (e) {
-                  reportError("run_flow", e);
-                } finally {
-                  setRunning(false);
-                }
-              }}
+              onClick={() => setSidebarTab("run")}
               disabled={running}
               className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white text-xs rounded disabled:opacity-40"
             >
@@ -345,6 +366,11 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
             existingNodes={flow.flow.nodes}
             sessions={sessions}
             onGoToSession={onGoToSession}
+            tab={sidebarTab}
+            setTab={setSidebarTab}
+            entryInputs={entryInputsOf(flow)}
+            onRun={runFlow}
+            running={running}
             node={selectedNode}
             onChange={(updated) => {
               const next = flow.flow.nodes.map((n) =>
@@ -377,6 +403,11 @@ function NodeInspectorWithRf({
   existingNodes,
   sessions,
   onGoToSession,
+  tab,
+  setTab,
+  entryInputs,
+  onRun,
+  running,
   node,
   onChange,
   onDelete,
@@ -385,6 +416,11 @@ function NodeInspectorWithRf({
   existingNodes: FlowNode[];
   sessions: DiagnosticsSessionSummary[];
   onGoToSession: (sessionId: string) => void;
+  tab: SidebarTab;
+  setTab: (t: SidebarTab) => void;
+  entryInputs: FlowInputs;
+  onRun: (inputs: Record<string, unknown>) => void;
+  running: boolean;
   node: FlowNode | null;
   onChange: (n: FlowNode) => void;
   onDelete: (id: string) => void;
@@ -396,6 +432,11 @@ function NodeInspectorWithRf({
       node={node}
       sessions={sessions}
       onGoToSession={onGoToSession}
+      tab={tab}
+      setTab={setTab}
+      entryInputs={entryInputs}
+      onRun={onRun}
+      running={running}
       onChange={onChange}
       onDelete={onDelete}
       onAddNode={(kind) => {
@@ -624,6 +665,11 @@ function NodeInspector({
   node,
   sessions,
   onGoToSession,
+  tab,
+  setTab,
+  entryInputs,
+  onRun,
+  running,
   onChange,
   onDelete,
   onAddNode,
@@ -631,14 +677,19 @@ function NodeInspector({
   node: FlowNode | null;
   sessions: DiagnosticsSessionSummary[];
   onGoToSession: (sessionId: string) => void;
+  tab: SidebarTab;
+  setTab: (t: SidebarTab) => void;
+  entryInputs: FlowInputs;
+  onRun: (inputs: Record<string, unknown>) => void;
+  running: boolean;
   onChange: (n: FlowNode) => void;
   onDelete: (id: string) => void;
   onAddNode: (kind: string) => void;
 }) {
-  const [tab, setTab] = useState<"node" | "sessions">("node");
   // Selecting a node on the canvas jumps to the editing tab.
   useEffect(() => {
     if (node) setTab("node");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node]);
 
   const pill = (active: boolean) =>
@@ -651,10 +702,13 @@ function NodeInspector({
       <div className="shrink-0 p-2 border-b border-surface-3">
         <div className="flex gap-1 bg-surface-2 rounded-lg p-0.5">
           <button className={pill(tab === "node")} onClick={() => setTab("node")}>
-            Add Node
+            Edit
+          </button>
+          <button className={pill(tab === "run")} onClick={() => setTab("run")}>
+            Run
           </button>
           <button className={pill(tab === "sessions")} onClick={() => setTab("sessions")}>
-            Session Runs{sessions.length ? ` · ${sessions.length}` : ""}
+            Sessions{sessions.length ? ` · ${sessions.length}` : ""}
           </button>
         </div>
       </div>
@@ -729,11 +783,129 @@ function NodeInspector({
               </div>
             )}
           </>
+        ) : tab === "run" ? (
+          <RunTab entryInputs={entryInputs} onRun={onRun} running={running} />
         ) : (
           <RecentSessions sessions={sessions} onGoToSession={onGoToSession} />
         )}
       </div>
     </aside>
+  );
+}
+
+// Coerce a form value to the JSON type its input declares.
+function coerceInput(spec: FlowInputSpec, raw: unknown): unknown {
+  if (spec.type === "integer" || spec.type === "number") {
+    if (raw === "" || raw === undefined || raw === null) return undefined;
+    const n = Number(raw);
+    return Number.isNaN(n) ? raw : n;
+  }
+  if (spec.type === "boolean") return Boolean(raw);
+  return raw;
+}
+
+function RunTab({
+  entryInputs,
+  onRun,
+  running,
+}: {
+  entryInputs: FlowInputs;
+  onRun: (inputs: Record<string, unknown>) => void;
+  running: boolean;
+}) {
+  const names = Object.keys(entryInputs);
+  // Seed the form from declared defaults; re-seed when the flow's inputs change.
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
+    const seed: Record<string, unknown> = {};
+    for (const [name, spec] of Object.entries(entryInputs)) {
+      if (spec.default !== undefined) seed[name] = spec.default;
+      else if (spec.type === "boolean") seed[name] = false;
+    }
+    return seed;
+  });
+  const key = JSON.stringify(names);
+  useEffect(() => {
+    setValues((cur) => {
+      const next: Record<string, unknown> = {};
+      for (const [name, spec] of Object.entries(entryInputs)) {
+        next[name] = cur[name] ?? spec.default ?? (spec.type === "boolean" ? false : undefined);
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const missingRequired = names.filter((n) => {
+    if (!entryInputs[n].required) return false;
+    const v = values[n];
+    return v === undefined || v === null || v === "";
+  });
+  const canRun = !running && missingRequired.length === 0;
+
+  const submit = () => {
+    const out: Record<string, unknown> = {};
+    for (const [name, spec] of Object.entries(entryInputs)) {
+      const v = coerceInput(spec, values[name]);
+      if (v !== undefined) out[name] = v;
+    }
+    onRun(out);
+  };
+
+  return (
+    <div className="space-y-3">
+      {names.length === 0 ? (
+        <p className="text-xs text-gray-500">This flow takes no inputs.</p>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500">Provide inputs, then run.</p>
+          {names.map((name) => {
+            const spec = entryInputs[name];
+            const v = values[name];
+            const set = (val: unknown) => setValues((cur) => ({ ...cur, [name]: val }));
+            const isMissing = missingRequired.includes(name);
+            return (
+              <label key={name} className="block">
+                <span className="block text-xs text-gray-400 mb-1">
+                  {name}{" "}
+                  {spec.required && <span className="text-red-400">required</span>}{" "}
+                  <span className="text-gray-600 font-mono">{spec.type ?? "string"}</span>
+                </span>
+                {spec.type === "boolean" ? (
+                  <input
+                    type="checkbox"
+                    checked={Boolean(v)}
+                    onChange={(e) => set(e.target.checked)}
+                  />
+                ) : (
+                  <input
+                    type={spec.type === "integer" || spec.type === "number" ? "number" : "text"}
+                    value={v === undefined || v === null ? "" : String(v)}
+                    onChange={(e) => set(e.target.value)}
+                    className={`w-full px-2 py-1 bg-surface-2 border rounded text-sm font-mono ${
+                      isMissing ? "border-red-800" : "border-surface-3"
+                    }`}
+                  />
+                )}
+              </label>
+            );
+          })}
+        </>
+      )}
+
+      <button
+        onClick={submit}
+        disabled={!canRun}
+        className="w-full px-3 py-1.5 text-xs bg-green-700 hover:bg-green-600 text-white rounded disabled:opacity-40"
+      >
+        {running ? "Running…" : "Run"}
+      </button>
+      {missingRequired.length > 0 && (
+        <p className="text-xs text-red-400">
+          Fill required input{missingRequired.length > 1 ? "s" : ""}: {missingRequired.join(", ")}
+        </p>
+      )}
+      <p className="text-[11px] text-gray-600">Run results appear above; the run is logged under Session Runs.</p>
+    </div>
   );
 }
 
@@ -819,7 +991,104 @@ function EntryFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNod
           />
         </label>
       )}
+      <EntryInputsEditor
+        inputs={(d.inputs as FlowInputs) ?? {}}
+        onChange={(next) =>
+          onChange({
+            ...node,
+            data: { ...d, inputs: Object.keys(next).length ? next : undefined },
+          })
+        }
+      />
     </>
+  );
+}
+
+// Editor for the entry node's declared `inputs` (the flow's parameters). Rows
+// are keyed by index so renaming a key doesn't steal input focus.
+function EntryInputsEditor({
+  inputs,
+  onChange,
+}: {
+  inputs: FlowInputs;
+  onChange: (next: FlowInputs) => void;
+}) {
+  const entries = Object.entries(inputs);
+  const rebuild = (rows: [string, FlowInputSpec][]) => {
+    const next: FlowInputs = {};
+    for (const [k, v] of rows) if (k) next[k] = v;
+    onChange(next);
+  };
+  const setRow = (i: number, name: string, spec: FlowInputSpec) => {
+    const rows = entries.slice();
+    rows[i] = [name, spec];
+    rebuild(rows);
+  };
+  const add = () => {
+    let name = "input";
+    let n = 1;
+    while (inputs[name]) name = `input${n++}`;
+    rebuild([...entries, [name, { type: "string" }]]);
+  };
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-400">Inputs</span>
+        <span className="text-[11px] text-gray-600">the flow's parameters</span>
+      </div>
+      {entries.map(([name, spec], i) => (
+        <div key={i} className="p-2 bg-surface-2 rounded space-y-1">
+          <div className="flex gap-1 items-center">
+            <input
+              value={name}
+              onChange={(e) => setRow(i, e.target.value, spec)}
+              placeholder="name"
+              className="flex-1 px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono"
+            />
+            <button
+              className="text-xs text-red-300 px-1"
+              onClick={() => rebuild(entries.filter((_, j) => j !== i))}
+              aria-label="remove input"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex gap-1 items-center">
+            <select
+              value={spec.type ?? "string"}
+              onChange={(e) => setRow(i, name, { ...spec, type: e.target.value })}
+              className="px-1 py-1 bg-surface-1 border border-surface-3 rounded text-xs"
+            >
+              {["string", "integer", "boolean"].map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+            <label className="flex items-center gap-1 text-xs text-gray-400 whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={!!spec.required}
+                onChange={(e) => setRow(i, name, { ...spec, required: e.target.checked })}
+              />
+              required
+            </label>
+          </div>
+          <input
+            value={spec.default === undefined ? "" : String(spec.default)}
+            onChange={(e) =>
+              setRow(i, name, {
+                ...spec,
+                default: e.target.value === "" ? undefined : e.target.value,
+              })
+            }
+            placeholder="default (optional)"
+            className="w-full px-2 py-1 bg-surface-1 border border-surface-3 rounded text-xs font-mono"
+          />
+        </div>
+      ))}
+      <button className="text-xs text-accent" onClick={add}>
+        + input
+      </button>
+    </div>
   );
 }
 

@@ -113,6 +113,7 @@ pub trait ProjectConnection: Send + Sync {
         id: &str,
         persona_slug: Option<&str>,
         model_name: Option<&str>,
+        inputs: Option<serde_json::Value>,
     ) -> anyhow::Result<RunFlowResult>;
 
     /// Resume a paused v2 flow run by supplying a handle (an approval decision,
@@ -299,6 +300,7 @@ impl ProjectConnection for LocalConnection {
         _id: &str,
         _persona_slug: Option<&str>,
         _model_name: Option<&str>,
+        _inputs: Option<serde_json::Value>,
     ) -> anyhow::Result<RunFlowResult> {
         Err(chat::not_supported_in_local_mode("Run flow"))
     }
@@ -838,6 +840,7 @@ impl ProjectConnection for RemoteConnection {
         id: &str,
         persona_slug: Option<&str>,
         model_name: Option<&str>,
+        inputs: Option<serde_json::Value>,
     ) -> anyhow::Result<RunFlowResult> {
         #[derive(serde::Serialize)]
         struct Body<'a> {
@@ -845,10 +848,12 @@ impl ProjectConnection for RemoteConnection {
             persona_slug: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             model_name: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            inputs: Option<serde_json::Value>,
         }
         let resp = ok_or_err(
             self.post(&format!("/api/v1/flows/{id}/run"))
-                .json(&Body { persona_slug, model_name })
+                .json(&Body { persona_slug, model_name, inputs })
                 .send()
                 .await?,
             "POST run flow",

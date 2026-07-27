@@ -465,10 +465,11 @@ async fn run_flow(
     id: String,
     persona_slug: Option<String>,
     model_name: Option<String>,
+    inputs: Option<serde_json::Value>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<RunFlowResult, String> {
     let conn = require_connection(&state)?;
-    conn.run_flow(&id, persona_slug.as_deref(), model_name.as_deref())
+    conn.run_flow(&id, persona_slug.as_deref(), model_name.as_deref(), inputs)
         .await
         .map_err(|e| e.to_string())
 }
