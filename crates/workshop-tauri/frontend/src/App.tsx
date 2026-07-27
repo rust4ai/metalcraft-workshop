@@ -120,6 +120,11 @@ export default function App() {
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onGoToSession={(sid) => {
+                setSelectedId(sid);
+                setSection("sessions");
+                workshop.refreshSessions();
+              }}
             />
           )}
           {section === "chats" && (

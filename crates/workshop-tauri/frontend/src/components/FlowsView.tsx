@@ -29,6 +29,7 @@ import type {
   FlowTemplateSummary,
   RunFlowResult,
   FlowRun,
+  DiagnosticsSessionSummary,
 } from "../types";
 
 // Every node type renders through one data-driven component (it picks the right
@@ -55,6 +56,8 @@ interface Props {
   snapshot: ProjectSnapshot;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /// Navigate to the Sessions page with `sessionId` selected.
+  onGoToSession: (sessionId: string) => void;
 }
 
 // Types offered by the "+ Add node" palette (entry is auto-created, at most one).
@@ -73,7 +76,7 @@ const ADDABLE_NODE_TYPES = [
 // Full set for the node-type dropdown (includes entry).
 const ALL_NODE_TYPES = ["entry", ...ADDABLE_NODE_TYPES] as const;
 
-export default function FlowsView({ selectedId, onSelect }: Props) {
+export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props) {
   const [flow, setFlow] = useState<SavedFlow | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -83,8 +86,29 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunFlowResult | null>(null);
   const [pauseRun, setPauseRun] = useState<FlowRun | null>(null);
+  const [sessions, setSessions] = useState<DiagnosticsSessionSummary[]>([]);
   const reportError = useReportError();
   const isNew = selectedId === "__new__";
+
+  // Diagnostics sessions produced by running THIS flow (kind == "flow",
+  // flow_id == selectedId), newest first.
+  const refreshFlowSessions = useCallback(async () => {
+    if (!selectedId || selectedId === "__new__") {
+      setSessions([]);
+      return;
+    }
+    try {
+      const all = await invoke<DiagnosticsSessionSummary[]>("list_diagnostics_sessions");
+      setSessions(
+        all
+          .filter((s) => s.flow_id === selectedId)
+          .sort((a, b) => (b.timestamp ?? "").localeCompare(a.timestamp ?? "")),
+      );
+    } catch (e) {
+      console.error("list_diagnostics_sessions", e);
+      setSessions([]);
+    }
+  }, [selectedId]);
 
   // After a run/resume, if the v2 run is paused, fetch its pause details so we
   // can offer resume options; otherwise clear them.
@@ -101,8 +125,10 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
       } else {
         setPauseRun(null);
       }
+      // A run just wrote a new flow-tagged session; reflect it in the list.
+      refreshFlowSessions();
     },
-    [reportError],
+    [reportError, refreshFlowSessions],
   );
 
   const resumeRun = useCallback(
@@ -125,7 +151,7 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
     setSelectedNodeId(null);
     setRunResult(null);
     setPauseRun(null);
-    setRunResult(null);
+    refreshFlowSessions();
     if (!selectedId) {
       setFlow(null);
       return;
@@ -143,7 +169,7 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
     invoke<SavedFlow>("get_flow", { id: selectedId })
       .then(setFlow)
       .catch((e) => reportError("get_flow", e));
-  }, [selectedId, isNew, reportError]);
+  }, [selectedId, isNew, reportError, refreshFlowSessions]);
 
   // The picker is its own screen — short-circuit before checking `flow`.
   if (isNew && showPicker) {
@@ -317,6 +343,8 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
           </div>
           <NodeInspectorWithRf
             existingNodes={flow.flow.nodes}
+            sessions={sessions}
+            onGoToSession={onGoToSession}
             node={selectedNode}
             onChange={(updated) => {
               const next = flow.flow.nodes.map((n) =>
@@ -347,12 +375,16 @@ export default function FlowsView({ selectedId, onSelect }: Props) {
 /// `useReactFlow().screenToFlowPosition()`.
 function NodeInspectorWithRf({
   existingNodes,
+  sessions,
+  onGoToSession,
   node,
   onChange,
   onDelete,
   onAddNode,
 }: {
   existingNodes: FlowNode[];
+  sessions: DiagnosticsSessionSummary[];
+  onGoToSession: (sessionId: string) => void;
   node: FlowNode | null;
   onChange: (n: FlowNode) => void;
   onDelete: (id: string) => void;
@@ -362,6 +394,8 @@ function NodeInspectorWithRf({
   return (
     <NodeInspector
       node={node}
+      sessions={sessions}
+      onGoToSession={onGoToSession}
       onChange={onChange}
       onDelete={onDelete}
       onAddNode={(kind) => {
@@ -588,84 +622,158 @@ function FlowCanvas({
 
 function NodeInspector({
   node,
+  sessions,
+  onGoToSession,
   onChange,
   onDelete,
   onAddNode,
 }: {
   node: FlowNode | null;
+  sessions: DiagnosticsSessionSummary[];
+  onGoToSession: (sessionId: string) => void;
   onChange: (n: FlowNode) => void;
   onDelete: (id: string) => void;
   onAddNode: (kind: string) => void;
 }) {
+  const [tab, setTab] = useState<"node" | "sessions">("node");
+  // Selecting a node on the canvas jumps to the editing tab.
+  useEffect(() => {
+    if (node) setTab("node");
+  }, [node]);
+
+  const pill = (active: boolean) =>
+    `flex-1 px-2 py-1 text-xs rounded-md transition-colors ${
+      active ? "bg-surface-3 text-gray-100" : "text-gray-400 hover:text-gray-200"
+    }`;
+
   return (
-    <aside className="w-80 bg-surface-1 border-l border-surface-3 overflow-y-auto p-3">
-      <div className="mb-4">
-        <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Add node</p>
-        <div className="flex flex-wrap gap-1.5">
-          {ADDABLE_NODE_TYPES.map((k) => (
-            <button
-              key={k}
-              onClick={() => onAddNode(k)}
-              className="px-2 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
-            >
-              + {k}
-            </button>
-          ))}
+    <aside className="w-80 bg-surface-1 border-l border-surface-3 flex flex-col">
+      <div className="shrink-0 p-2 border-b border-surface-3">
+        <div className="flex gap-1 bg-surface-2 rounded-lg p-0.5">
+          <button className={pill(tab === "node")} onClick={() => setTab("node")}>
+            Add Node
+          </button>
+          <button className={pill(tab === "sessions")} onClick={() => setTab("sessions")}>
+            Session Runs{sessions.length ? ` · ${sessions.length}` : ""}
+          </button>
         </div>
       </div>
 
-      {!node ? (
-        <p className="text-xs text-gray-500">
-          Click a node to edit its config. Drag to move; connect by dragging from node edges.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">
-            Editing <span className="font-mono text-accent">{node.id}</span>
-          </p>
+      <div className="flex-1 overflow-y-auto p-3">
+        {tab === "node" ? (
+          <>
+            <div className="mb-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Add node</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ADDABLE_NODE_TYPES.map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => onAddNode(k)}
+                    className="px-2 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
+                  >
+                    + {k}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          <label className="block">
-            <span className="block text-xs text-gray-500 mb-1">Node type</span>
-            <select
-              value={node.node_type}
-              onChange={(e) => onChange({ ...node, node_type: e.target.value })}
-              className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
-            >
-              {ALL_NODE_TYPES.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </label>
+            {!node ? (
+              <p className="text-xs text-gray-500">
+                Click a node to edit its config. Drag to move; connect by dragging from node edges.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-wide text-gray-500">
+                  Editing <span className="font-mono text-accent">{node.id}</span>
+                </p>
 
-          <NodeFields node={node} onChange={onChange} />
+                <label className="block">
+                  <span className="block text-xs text-gray-500 mb-1">Node type</span>
+                  <select
+                    value={node.node_type}
+                    onChange={(e) => onChange({ ...node, node_type: e.target.value })}
+                    className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
+                  >
+                    {ALL_NODE_TYPES.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-          <details className="text-xs">
-            <summary className="cursor-pointer text-gray-500">Raw data JSON</summary>
-            <textarea
-              value={JSON.stringify(node.data, null, 2)}
-              onChange={(e) => {
-                try {
-                  onChange({ ...node, data: JSON.parse(e.target.value) });
-                } catch {
-                  // ignore parse errors while typing
-                }
-              }}
-              rows={6}
-              className="w-full mt-1 p-2 bg-surface-2 border border-surface-3 rounded font-mono text-xs"
-            />
-          </details>
+                <NodeFields node={node} onChange={onChange} />
 
-          <button
-            onClick={() => onDelete(node.id)}
-            className="w-full px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded"
-          >
-            Delete node
-          </button>
-        </div>
-      )}
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-gray-500">Raw data JSON</summary>
+                  <textarea
+                    value={JSON.stringify(node.data, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        onChange({ ...node, data: JSON.parse(e.target.value) });
+                      } catch {
+                        // ignore parse errors while typing
+                      }
+                    }}
+                    rows={6}
+                    className="w-full mt-1 p-2 bg-surface-2 border border-surface-3 rounded font-mono text-xs"
+                  />
+                </details>
+
+                <button
+                  onClick={() => onDelete(node.id)}
+                  className="w-full px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded"
+                >
+                  Delete node
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <RecentSessions sessions={sessions} onGoToSession={onGoToSession} />
+        )}
+      </div>
     </aside>
+  );
+}
+
+function RecentSessions({
+  sessions,
+  onGoToSession,
+}: {
+  sessions: DiagnosticsSessionSummary[];
+  onGoToSession: (sessionId: string) => void;
+}) {
+  if (sessions.length === 0) {
+    return (
+      <p className="text-xs text-gray-500">
+        No runs yet. Runs of this flow appear here — click one to open its session logs.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1">
+      {sessions.map((s) => (
+        <li key={s.id}>
+          <button
+            onClick={() => onGoToSession(s.id)}
+            className="w-full text-left px-2 py-1.5 rounded bg-surface-2 hover:bg-surface-3 group"
+            title="Open in Sessions ↗"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-200 truncate">
+                {s.persona_name ?? s.persona_slug ?? "flow run"}
+              </span>
+              <span className="text-[10px] text-gray-500 opacity-0 group-hover:opacity-100">↗</span>
+            </div>
+            <div className="text-[10px] text-gray-500 font-mono truncate">
+              {s.timestamp}
+              {s.turn_count ? ` · ${s.turn_count} turns` : ""}
+            </div>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
