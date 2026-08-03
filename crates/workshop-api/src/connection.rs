@@ -194,6 +194,11 @@ pub trait ProjectConnection: Send + Sync {
     ) -> anyhow::Result<GatewayChannel>;
     async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
     async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()>;
+
+    // Metalcraft Gateway zero-copy connect (JSON passthrough).
+    async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value>;
+    async fn gateway_metalcraft_register(&self, phone_number: &str) -> anyhow::Result<serde_json::Value>;
+    async fn gateway_metalcraft_connect(&self, webhook_base: Option<String>) -> anyhow::Result<serde_json::Value>;
 }
 
 // ─── Local ──────────────────────────────────────────────────────────────────
@@ -401,6 +406,15 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
     }
     async fn delete_gateway_channel(&self, _id: &str) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn gateway_metalcraft_register(&self, _phone_number: &str) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn gateway_metalcraft_connect(&self, _webhook_base: Option<String>) -> anyhow::Result<serde_json::Value> {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
     }
 }
@@ -1148,6 +1162,36 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         Ok(())
+    }
+    async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.get("/api/v1/gateway/metalcraft/status").send().await?,
+            "GET metalcraft gateway status",
+        )
+        .await?;
+        decode_json(resp, "GET metalcraft gateway status").await
+    }
+    async fn gateway_metalcraft_register(&self, phone_number: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.post("/api/v1/gateway/metalcraft/register")
+                .json(&serde_json::json!({ "phone_number": phone_number }))
+                .send()
+                .await?,
+            "POST metalcraft gateway register",
+        )
+        .await?;
+        decode_json(resp, "POST metalcraft gateway register").await
+    }
+    async fn gateway_metalcraft_connect(&self, webhook_base: Option<String>) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.post("/api/v1/gateway/metalcraft/connect")
+                .json(&serde_json::json!({ "webhook_base": webhook_base }))
+                .send()
+                .await?,
+            "POST metalcraft gateway connect",
+        )
+        .await?;
+        decode_json(resp, "POST metalcraft gateway connect").await
     }
 }
 

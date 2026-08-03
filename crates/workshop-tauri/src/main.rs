@@ -744,6 +744,32 @@ async fn list_gateway_channels(
 }
 
 #[tauri::command]
+async fn gateway_metalcraft_status(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    conn.gateway_metalcraft_status().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn gateway_metalcraft_register(
+    state: tauri::State<'_, Arc<AppState>>,
+    phone_number: String,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    conn.gateway_metalcraft_register(&phone_number).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn gateway_metalcraft_connect(
+    state: tauri::State<'_, Arc<AppState>>,
+    webhook_base: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    conn.gateway_metalcraft_connect(webhook_base).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn list_gateway_channel_events(
     id: String,
     state: tauri::State<'_, Arc<AppState>>,
@@ -1283,6 +1309,9 @@ fn main() {
             set_pack_enabled,
             list_gateway_types,
             list_gateway_channels,
+            gateway_metalcraft_status,
+            gateway_metalcraft_register,
+            gateway_metalcraft_connect,
             list_gateway_channel_events,
             list_gateway_activity,
             create_gateway_channel,

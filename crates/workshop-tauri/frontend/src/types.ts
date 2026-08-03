@@ -322,6 +322,21 @@ export interface GatewayType {
   adapter: string;
   requires_env: string[];
   settings: GatewaySettingField[];
+  /** When set, the workshop renders that provider's Connect panel instead of a
+   * manual settings form (e.g. "metalcraft-gateway" auto-syncs its config). */
+  provisioner?: string | null;
+}
+
+/** Registration/verification/connection state for the Metalcraft Gateway Connect panel. */
+export interface MetalcraftGatewayStatus {
+  configured: boolean;
+  registered: boolean;
+  verified: boolean;
+  connected: boolean;
+  active_number?: string | null;
+  channel?: string | null;
+  has_public_url: boolean;
+  error?: string | null;
 }
 
 export interface GatewayChannel {

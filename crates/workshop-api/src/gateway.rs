@@ -34,6 +34,10 @@ pub struct GatewayType {
     pub requires_env: Vec<String>,
     #[serde(default)]
     pub settings: Vec<GatewaySettingField>,
+    /// When set, the workshop renders this provider's Connect panel instead of a
+    /// manual settings form (e.g. `"metalcraft-gateway"` auto-syncs its config).
+    #[serde(default)]
+    pub provisioner: Option<String>,
 }
 
 /// A user-created configuration of a gateway channel type.

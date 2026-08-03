@@ -8,6 +8,7 @@ import type {
   GatewaySettingField,
   GatewayType,
   KeySummary,
+  MetalcraftGatewayStatus,
   ProjectSnapshot,
 } from "../types";
 
@@ -414,10 +415,21 @@ function ChannelForm({
 
         {type && <p className="text-xs text-gray-500">{type.description}</p>}
 
-        {type && INBOUND_WEBHOOK_ADAPTERS.has(type.adapter) && (
+        {type && INBOUND_WEBHOOK_ADAPTERS.has(type.adapter) && !type.provisioner && (
           <InboundWebhookCallout adapter={type.adapter} baseUrl={remoteBaseUrl} />
         )}
 
+        {type?.provisioner === "metalcraft-gateway" && (
+          <MetalcraftGatewayConnect
+            onDone={() => {
+              onSaved();
+              onCancel();
+            }}
+          />
+        )}
+
+        {!type?.provisioner && (
+          <>
         <Field label="Name">
           <input
             type="text"
@@ -483,7 +495,142 @@ function ChannelForm({
         )}
           </>
         )}
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+/// The Metalcraft Gateway "Connect" panel — zero-copy. Reads the pod's link status,
+/// walks the one-time phone register + verify, then connects (which fetches config,
+/// wires the webhook, and enables the channel) with a single click.
+function MetalcraftGatewayConnect({ onDone }: { onDone: () => void }) {
+  const reportError = useReportError();
+  const [status, setStatus] = useState<MetalcraftGatewayStatus | null>(null);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setErr(null);
+    try {
+      setStatus(await invoke<MetalcraftGatewayStatus>("gateway_metalcraft_status"));
+    } catch (e) {
+      setErr(String(e));
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(String(e));
+      reportError("metalcraft_gateway", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const register = () =>
+    run(async () => {
+      const r = await invoke<{ verify_code?: string }>("gateway_metalcraft_register", {
+        phoneNumber: phone.trim(),
+      });
+      setCode(r.verify_code ?? null);
+      await load();
+    });
+  const connect = () =>
+    run(async () => {
+      await invoke("gateway_metalcraft_connect", {});
+      await load();
+      onDone();
+    });
+
+  if (!status) return <div className="text-xs text-gray-500">Loading…</div>;
+
+  const box = "rounded border border-surface-3 bg-surface-1 p-4 space-y-3 text-sm";
+  const num = status.active_number ?? "the gateway number";
+
+  return (
+    <div className={box}>
+      {err && <div className="text-xs text-red-300">{err}</div>}
+
+      {!status.configured ? (
+        <p className="text-gray-400">
+          This pod isn't linked to a Metalcraft ID account (no token).
+          {status.error ? ` (${status.error})` : ""}
+        </p>
+      ) : status.connected ? (
+        <div className="space-y-2">
+          <p className="text-emerald-300">✓ Connected as {status.active_number}</p>
+          <button
+            onClick={connect}
+            disabled={busy}
+            className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs"
+          >
+            Re-sync
+          </button>
+        </div>
+      ) : !status.registered ? (
+        <div className="space-y-2">
+          <p className="text-gray-400">
+            Register your phone number. You'll verify it once, then connect — no keys to copy.
+          </p>
+          <div className="flex gap-2">
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+15551234567"
+              className="flex-1 px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+            />
+            <button
+              onClick={register}
+              disabled={busy || !phone.trim()}
+              className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
+            >
+              Register
+            </button>
+          </div>
+        </div>
+      ) : !status.verified ? (
+        <div className="space-y-2">
+          <p className="text-gray-300">
+            To activate, text {code ? <span className="font-mono text-accent-light">{code}</span> : "your code"}{" "}
+            from your phone to <span className="font-mono">{num}</span>.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={load} disabled={busy} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs">
+              I've verified — refresh
+            </button>
+            <button onClick={register} disabled={busy} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs">
+              Resend code
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-gray-300">Verified as {status.active_number}. Ready to connect.</p>
+          {!status.has_public_url && (
+            <p className="text-[11px] text-amber-300">
+              Warning: this pod has no POD_PUBLIC_URL, so its inbound webhook can't be auto-registered.
+            </p>
+          )}
+          <button
+            onClick={connect}
+            disabled={busy}
+            className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
+          >
+            {busy ? "Connecting…" : "Connect"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
