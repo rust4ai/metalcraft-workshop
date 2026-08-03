@@ -1183,6 +1183,11 @@ impl ProjectConnection for RemoteConnection {
         decode_json(resp, "POST metalcraft gateway register").await
     }
     async fn gateway_metalcraft_connect(&self, webhook_base: Option<String>) -> anyhow::Result<serde_json::Value> {
+        // Default to the very URL the workshop uses to reach this pod — authoritative
+        // in remote mode, so Connect works even without POD_PUBLIC_URL in the pod env.
+        let webhook_base = webhook_base
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| Some(self.base_url.clone()));
         let resp = ok_or_err(
             self.post("/api/v1/gateway/metalcraft/connect")
                 .json(&serde_json::json!({ "webhook_base": webhook_base }))

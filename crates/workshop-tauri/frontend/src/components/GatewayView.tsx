@@ -669,12 +669,6 @@ function MetalcraftGatewayConnect({
       ) : (
         <div className="space-y-2">
           <p className="text-gray-300">Verified as {status.active_number}. Ready to connect.</p>
-          {!status.has_public_url && !remoteBaseUrl && (
-            <p className="text-[11px] text-amber-300">
-              Warning: this pod has no POD_PUBLIC_URL and the workshop doesn't know its URL, so its
-              inbound webhook can't be auto-registered.
-            </p>
-          )}
           <button
             onClick={connect}
             disabled={busy}
