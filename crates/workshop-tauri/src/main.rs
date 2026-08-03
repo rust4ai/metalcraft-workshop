@@ -815,6 +815,238 @@ async fn delete_gateway_channel(
     conn.delete_gateway_channel(&id).await.map_err(|e| e.to_string())
 }
 
+// ---------- Metalcraft login (metalcraft-id + k3s pod picker) ----------
+//
+// Third login path: sign in to metalcraft-id via the browser (device flow), list
+// the account's agent pods from the control plane, then connect to a chosen pod
+// by revealing its workshop key and reusing the same RemoteConnection as the
+// "Remote agent" tab.
+
+/// metalcraft-id origin. Override with `METALCRAFT_ID_URL` for local testing.
+fn metalcraft_id_base() -> String {
+    std::env::var("METALCRAFT_ID_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "https://id.metalcraftai.com".to_string())
+}
+
+/// k3s control-plane origin. Override with `METALCRAFT_PODS_URL` for local testing.
+fn control_plane_base() -> String {
+    std::env::var("METALCRAFT_PODS_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "https://pods.metalcraftai.com".to_string())
+}
+
+/// The persisted metalcraft-id session — a long-lived PAT plus the account email,
+/// so relaunching the app goes straight to the pod list without re-login.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct MetalcraftSession {
+    pat: String,
+    email: String,
+}
+
+fn metalcraft_session_path() -> Option<PathBuf> {
+    let base = dirs::config_dir()?;
+    Some(base.join("metalcraft-workshop").join("metalcraft_session.json"))
+}
+
+fn load_metalcraft_session() -> Option<MetalcraftSession> {
+    let p = metalcraft_session_path()?;
+    let raw = std::fs::read_to_string(&p).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn save_metalcraft_session(s: &MetalcraftSession) {
+    let Some(p) = metalcraft_session_path() else { return };
+    if let Some(parent) = p.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(s) {
+        let _ = std::fs::write(&p, json);
+    }
+}
+
+fn clear_metalcraft_session() {
+    if let Some(p) = metalcraft_session_path() {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// Open a URL in the user's default browser. Best-effort; the UI also shows the
+/// URL as a copyable fallback in case this doesn't fire.
+fn open_in_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let cmd = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(target_os = "windows")]
+    let cmd = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let cmd = std::process::Command::new("xdg-open").arg(url).spawn();
+    if let Err(e) = cmd {
+        log::warn!("failed to open browser for {url}: {e}");
+    }
+}
+
+/// Begin a metalcraft-id device login: ask the hub for a request, open the verify
+/// URL in the browser, and return `{ device_code, user_code, verify_url,
+/// interval_secs, expires_at }` so the UI can poll and show the URL fallback.
+#[tauri::command]
+async fn metalcraft_login_start() -> Result<serde_json::Value, String> {
+    let base = metalcraft_id_base();
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/auth/device/start"))
+        .send()
+        .await
+        .map_err(|e| format!("could not reach metalcraft-id: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("metalcraft-id returned {}", resp.status()));
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    if let Some(url) = body.get("verify_url").and_then(|v| v.as_str()) {
+        open_in_browser(url);
+    }
+    Ok(body)
+}
+
+/// Poll for device-login completion. Returns `{ status: "pending" | "expired" }`
+/// while waiting, or `{ status: "signed_in", email, premium }` once approved (and
+/// persists the PAT).
+#[tauri::command]
+async fn metalcraft_login_poll(device_code: String) -> Result<serde_json::Value, String> {
+    let base = metalcraft_id_base();
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/auth/device/poll"))
+        .json(&serde_json::json!({ "device_code": device_code }))
+        .send()
+        .await
+        .map_err(|e| format!("could not reach metalcraft-id: {e}"))?;
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    if body.get("status").and_then(|v| v.as_str()) != Some("signed_in") {
+        return Ok(body); // pending / expired — hand straight back to the UI
+    }
+
+    let token = body
+        .get("token")
+        .and_then(|v| v.as_str())
+        .ok_or("metalcraft-id returned no token")?
+        .to_string();
+
+    // Confirm identity + capture the email for display.
+    let me: serde_json::Value = client
+        .get(format!("{base}/me"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    let email = me.get("email").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let premium = me.get("premium").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    save_metalcraft_session(&MetalcraftSession { pat: token, email: email.clone() });
+    Ok(serde_json::json!({ "status": "signed_in", "email": email, "premium": premium }))
+}
+
+/// The persisted session (email only), if any — lets the UI open straight into the
+/// signed-in pod list on launch.
+#[tauri::command]
+async fn metalcraft_session() -> Result<Option<serde_json::Value>, String> {
+    Ok(load_metalcraft_session().map(|s| serde_json::json!({ "email": s.email })))
+}
+
+/// Forget the persisted metalcraft-id session.
+#[tauri::command]
+async fn metalcraft_logout() -> Result<(), String> {
+    clear_metalcraft_session();
+    Ok(())
+}
+
+/// List the signed-in account's agent pods from the control plane.
+#[tauri::command]
+async fn list_metalcraft_pods() -> Result<serde_json::Value, String> {
+    let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
+    let base = control_plane_base();
+    let resp = reqwest::Client::new()
+        .get(format!("{base}/api/pods"))
+        .bearer_auth(&session.pat)
+        .send()
+        .await
+        .map_err(|e| format!("could not reach the control plane: {e}"))?;
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("session expired — sign in to Metalcraft again".to_string());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("control plane returned {}", resp.status()));
+    }
+    resp.json().await.map_err(|e| e.to_string())
+}
+
+/// Reveal a pod's workshop key and connect to it (reuses the Remote-agent path).
+/// Errors with the literal string `needs_rotate` when the pod has no stored key
+/// yet, so the UI can offer to generate one.
+#[tauri::command]
+async fn open_metalcraft_pod(
+    pod_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
+    let base = control_plane_base();
+    let resp = reqwest::Client::new()
+        .get(format!("{base}/api/pods/{pod_id}/workshop-key"))
+        .bearer_auth(&session.pat)
+        .send()
+        .await
+        .map_err(|e| format!("could not reach the control plane: {e}"))?;
+    if resp.status() == reqwest::StatusCode::CONFLICT {
+        return Err("needs_rotate".to_string());
+    }
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("session expired — sign in to Metalcraft again".to_string());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("could not fetch pod key ({})", resp.status()));
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let url = body.get("url").and_then(|v| v.as_str()).ok_or("pod URL missing")?.to_string();
+    let key = body
+        .get("workshop_api_key")
+        .and_then(|v| v.as_str())
+        .ok_or("pod key missing")?
+        .to_string();
+
+    let conn = RemoteConnection::new(url.clone(), key.clone())
+        .map_err(|e| format!("remote client: {e}"))?;
+    let conn: Arc<dyn ProjectConnection> = Arc::new(conn);
+    let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
+    *state.connection.lock() = Some(conn);
+    *state.watcher.lock() = None; // remote mode has no local file watcher
+    state.emit(WorkshopEvent::ProjectOpened(snapshot));
+    persist_recent(RecentEntry::remote(&url, &key));
+    Ok(())
+}
+
+/// Rotate a pod's workshop key (restarts the pod). Used to recover a pod that has
+/// no stored key yet, so the app can then connect via [`open_metalcraft_pod`].
+#[tauri::command]
+async fn rotate_metalcraft_pod_key(pod_id: String) -> Result<(), String> {
+    let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
+    let base = control_plane_base();
+    let resp = reqwest::Client::new()
+        .post(format!("{base}/api/pods/{pod_id}/workshop-key"))
+        .bearer_auth(&session.pat)
+        .send()
+        .await
+        .map_err(|e| format!("could not reach the control plane: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("could not rotate pod key ({})", resp.status()));
+    }
+    Ok(())
+}
+
 // ---- Recents ----
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -1029,6 +1261,13 @@ fn main() {
             update_gateway_channel,
             set_gateway_channel_enabled,
             delete_gateway_channel,
+            metalcraft_login_start,
+            metalcraft_login_poll,
+            metalcraft_session,
+            metalcraft_logout,
+            list_metalcraft_pods,
+            open_metalcraft_pod,
+            rotate_metalcraft_pod_key,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");

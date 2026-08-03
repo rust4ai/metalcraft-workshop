@@ -5264,7 +5264,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-tauri"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5274,6 +5274,7 @@ dependencies = [
  "log",
  "metalcraft-flows",
  "parking_lot",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",

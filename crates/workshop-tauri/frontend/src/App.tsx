@@ -47,8 +47,16 @@ export default function App() {
       <ProjectPicker
         recents={workshop.recents}
         error={workshop.lastError}
-        onOpen={(p?: string) => workshop.openProject(p)}
         onOpenRemote={(url, key) => workshop.openRemote(url, key)}
+        metalcraft={{
+          session: workshop.metalcraftSession,
+          loginStart: workshop.metalcraftLoginStart,
+          loginPoll: workshop.metalcraftLoginPoll,
+          logout: workshop.metalcraftLogout,
+          listPods: workshop.listMetalcraftPods,
+          openPod: workshop.openMetalcraftPod,
+          rotatePodKey: workshop.rotateMetalcraftPodKey,
+        }}
       />
     );
   }

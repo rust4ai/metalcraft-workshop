@@ -229,6 +229,37 @@ export type RecentEntry =
   | { kind: "local"; path: string }
   | { kind: "remote"; base_url: string; api_key: string };
 
+// ── Metalcraft login (metalcraft-id + pod picker) ──────────────────────────
+
+/// Returned by `metalcraft_login_start` — the pending device-login request.
+export interface MetalcraftLoginStart {
+  device_code: string;
+  user_code: string;
+  verify_url: string;
+  interval_secs: number;
+  expires_at: string;
+}
+
+/// Result of a `metalcraft_login_poll` call.
+export type MetalcraftPollResult =
+  | { status: "pending" }
+  | { status: "expired" }
+  | { status: "signed_in"; email: string; premium: boolean };
+
+/// The persisted metalcraft-id session surfaced to the UI (email only).
+export interface MetalcraftSession {
+  email: string;
+}
+
+/// One agent pod from the control plane's `GET /api/pods`.
+export interface MetalcraftPod {
+  id: string;
+  slug: string;
+  status: string; // "pending" | "active" | "suspended"
+  has_token: boolean;
+  url: string;
+}
+
 // ── Flow templates / Run flow / Chat ───────────────────────────────────────
 
 export interface FlowTemplateSummary {

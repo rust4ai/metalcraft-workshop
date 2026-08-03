@@ -167,6 +167,38 @@ export function useWorkshop() {
     await invoke("close_project").catch(console.error);
   }, []);
 
+  // ── Metalcraft login (metalcraft-id + pod picker) ──────────────────────────
+  // Thin passthroughs to the Tauri commands; connecting to a pod emits the same
+  // `project_opened` event as any remote connection, so the app drops into the
+  // dashboard through the existing listener.
+  const metalcraftSession = useCallback(
+    () => invoke<{ email: string } | null>("metalcraft_session"),
+    [],
+  );
+  const metalcraftLoginStart = useCallback(
+    () => invoke<Record<string, unknown>>("metalcraft_login_start"),
+    [],
+  );
+  const metalcraftLoginPoll = useCallback(
+    (deviceCode: string) =>
+      invoke<Record<string, unknown>>("metalcraft_login_poll", { deviceCode }),
+    [],
+  );
+  const metalcraftLogout = useCallback(() => invoke<void>("metalcraft_logout"), []);
+  const listMetalcraftPods = useCallback(
+    () => invoke<unknown[]>("list_metalcraft_pods"),
+    [],
+  );
+  const openMetalcraftPod = useCallback(async (podId: string) => {
+    await invoke("open_metalcraft_pod", { podId });
+    setRemoteBaseUrl(null);
+    await refreshRecents();
+  }, [refreshRecents]);
+  const rotateMetalcraftPodKey = useCallback(
+    (podId: string) => invoke<void>("rotate_metalcraft_pod_key", { podId }),
+    [],
+  );
+
   return {
     snapshot,
     recents,
@@ -181,6 +213,13 @@ export function useWorkshop() {
     openProject,
     openRemote,
     closeProject,
+    metalcraftSession,
+    metalcraftLoginStart,
+    metalcraftLoginPoll,
+    metalcraftLogout,
+    listMetalcraftPods,
+    openMetalcraftPod,
+    rotateMetalcraftPodKey,
     chats,
     sessions,
     refreshChats,
