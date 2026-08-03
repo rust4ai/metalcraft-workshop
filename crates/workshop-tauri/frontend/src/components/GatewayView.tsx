@@ -436,6 +436,7 @@ function ChannelForm({
 
         {type?.provisioner === "metalcraft-gateway" && (
           <MetalcraftGatewayConnect
+            remoteBaseUrl={remoteBaseUrl}
             onDone={() => {
               onSaved();
               onCancel();
@@ -548,7 +549,13 @@ function MgStatusChip({ status }: { status: MetalcraftGatewayStatus | null }) {
 /// The Metalcraft Gateway "Connect" panel — zero-copy. Reads the pod's link status,
 /// walks the one-time phone register + verify, then connects (which fetches config,
 /// wires the webhook, and enables the channel) with a single click.
-function MetalcraftGatewayConnect({ onDone }: { onDone: () => void }) {
+function MetalcraftGatewayConnect({
+  onDone,
+  remoteBaseUrl,
+}: {
+  onDone: () => void;
+  remoteBaseUrl: string | null;
+}) {
   const reportError = useReportError();
   const [status, setStatus] = useState<MetalcraftGatewayStatus | null>(null);
   const [phone, setPhone] = useState("");
@@ -591,7 +598,9 @@ function MetalcraftGatewayConnect({ onDone }: { onDone: () => void }) {
     });
   const connect = () =>
     run(async () => {
-      await invoke("gateway_metalcraft_connect", {});
+      // Pass the URL the workshop already uses to reach this pod as a fallback, so
+      // Connect works even when POD_PUBLIC_URL isn't injected into the pod env.
+      await invoke("gateway_metalcraft_connect", { webhookBase: remoteBaseUrl ?? null });
       await load();
       onDone();
     });
@@ -660,9 +669,10 @@ function MetalcraftGatewayConnect({ onDone }: { onDone: () => void }) {
       ) : (
         <div className="space-y-2">
           <p className="text-gray-300">Verified as {status.active_number}. Ready to connect.</p>
-          {!status.has_public_url && (
+          {!status.has_public_url && !remoteBaseUrl && (
             <p className="text-[11px] text-amber-300">
-              Warning: this pod has no POD_PUBLIC_URL, so its inbound webhook can't be auto-registered.
+              Warning: this pod has no POD_PUBLIC_URL and the workshop doesn't know its URL, so its
+              inbound webhook can't be auto-registered.
             </p>
           )}
           <button
