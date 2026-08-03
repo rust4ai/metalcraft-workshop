@@ -131,6 +131,20 @@ export function useWorkshop() {
     }
   }, []);
 
+  // Re-pull the project snapshot from the agent. The backend command emits a
+  // `snapshot` workshop-event, so the listener above updates `snapshot` state —
+  // no return value to thread through here. Used by the snapshot-driven tabs
+  // (Personas/Skills) to pick up pack content an agent enabled mid-chat, which
+  // in remote mode fires no file watcher and no save_ok.
+  const refreshSnapshot = useCallback(async () => {
+    try {
+      await invoke("refresh_snapshot");
+    } catch {
+      // Local mode / disconnected agent has nothing to refresh from — the
+      // existing snapshot stays as-is rather than surfacing a recurring error.
+    }
+  }, []);
+
   const openProject = useCallback(
     async (path?: string) => {
       let target = path;
@@ -224,6 +238,7 @@ export function useWorkshop() {
     sessions,
     refreshChats,
     refreshSessions,
+    refreshSnapshot,
   };
 }
 

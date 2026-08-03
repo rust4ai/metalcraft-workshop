@@ -103,6 +103,13 @@ export default function App() {
             // time the tab is opened rather than trusting the snapshot.
             if (s === "chats") workshop.refreshChats();
             if (s === "sessions") workshop.refreshSessions();
+            // Personas, Skills, and Flows render from the snapshot, but an agent
+            // can enable a pack mid-chat (adding personas/skills/flow templates)
+            // with no file watcher or save_ok in remote mode — so re-pull the
+            // snapshot on open to surface that pack content instead of showing a
+            // stale list.
+            if (s === "personas" || s === "skills" || s === "flows")
+              workshop.refreshSnapshot();
           }}
           chats={workshop.chats}
           sessions={workshop.sessions}
