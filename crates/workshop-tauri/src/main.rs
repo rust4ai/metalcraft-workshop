@@ -1021,7 +1021,35 @@ async fn open_metalcraft_pod(
     let conn = RemoteConnection::new(url.clone(), key.clone())
         .map_err(|e| format!("remote client: {e}"))?;
     let conn: Arc<dyn ProjectConnection> = Arc::new(conn);
-    let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
+
+    // A pod that was just (re)started — right after a key rotation, or waking from
+    // suspend — needs time before its HTTP API answers; until a healthy backend
+    // exists the ingress returns 503 immediately. So a rotate-then-connect races
+    // the very restart it triggered. Be patient: poll every 15s, up to 10 times
+    // (~2.5 min), allowing for a full reschedule + image pull.
+    let mut snapshot = None;
+    let mut last_err = String::new();
+    const ATTEMPTS: u32 = 10;
+    const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+    for attempt in 0..ATTEMPTS {
+        match conn.snapshot().await {
+            Ok(s) => {
+                snapshot = Some(s);
+                break;
+            }
+            Err(e) => {
+                last_err = e.to_string();
+                log::info!("pod not ready yet (attempt {}/{ATTEMPTS}): {last_err}", attempt + 1);
+                if attempt + 1 < ATTEMPTS {
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                }
+            }
+        }
+    }
+    let snapshot = snapshot.ok_or_else(|| {
+        format!("pod did not become ready in time (it may still be starting) — try Connect again: {last_err}")
+    })?;
+
     *state.connection.lock() = Some(conn);
     *state.watcher.lock() = None; // remote mode has no local file watcher
     state.emit(WorkshopEvent::ProjectOpened(snapshot));
