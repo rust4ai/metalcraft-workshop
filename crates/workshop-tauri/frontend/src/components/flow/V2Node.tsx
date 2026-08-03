@@ -38,6 +38,10 @@ export function sourceHandles(type: string, data: Data): string[] {
     case "branch": {
       const hs = ((data.outputs as { handle?: string }[]) ?? []).map((o) => o.handle ?? "");
       if (data.default_handle) hs.push(data.default_handle as string);
+      // The reserved `error` rail is always available: a branch routes it on a
+      // protocol failure (LLM/API error, timeout, malformed payload). Always
+      // expose it so it can be wired, mirroring prompt/tool/http's ok/error.
+      hs.push("error");
       return dedupe(hs).length ? dedupe(hs) : ["default"];
     }
     case "branch_tool": {
