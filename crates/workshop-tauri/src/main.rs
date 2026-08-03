@@ -15,7 +15,7 @@ use workshop_api::{
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     gateway::{GatewayChannel, GatewayEvent, GatewayType},
     integration_packs::{PackDetail, PackSummary},
-    keys::{KeySummary, RecommendedKey},
+    keys::{KeyEntry, RecommendedKey},
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
 };
@@ -393,7 +393,7 @@ async fn delete_api_tool(
 #[tauri::command]
 async fn list_keys(
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<KeySummary>, String> {
+) -> Result<Vec<KeyEntry>, String> {
     let conn = require_connection(&state)?;
     conn.list_keys().await.map_err(|e| e.to_string())
 }
@@ -402,10 +402,11 @@ async fn list_keys(
 async fn save_key(
     name: String,
     value: String,
+    channel_id: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
-    conn.save_key(&name, &value)
+    conn.save_key(&name, &value, channel_id.as_deref())
         .await
         .map_err(|e| e.to_string())?;
     state.emit(WorkshopEvent::SaveOk {
@@ -418,15 +419,30 @@ async fn save_key(
 #[tauri::command]
 async fn delete_key(
     name: String,
+    channel_id: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let conn = require_connection(&state)?;
-    conn.delete_key(&name).await.map_err(|e| e.to_string())?;
+    conn.delete_key(&name, channel_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
     state.emit(WorkshopEvent::SaveOk {
         kind: FileKind::Key,
         id: name,
     });
     Ok(())
+}
+
+#[tauri::command]
+async fn reveal_key(
+    name: String,
+    channel_id: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let conn = require_connection(&state)?;
+    conn.reveal_key(&name, channel_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1286,6 +1302,7 @@ fn main() {
             save_api_tool,
             delete_api_tool,
             list_keys,
+            reveal_key,
             save_key,
             delete_key,
             list_recommended_keys,

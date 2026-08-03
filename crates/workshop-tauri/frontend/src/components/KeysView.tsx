@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
-import type { ProjectSnapshot, RecommendedKey } from "../types";
+import type { KeyEntry, ProjectSnapshot, RecommendedKey } from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -21,13 +21,34 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
   // Name to pre-fill when starting a new key from a recommendation.
   const [pendingName, setPendingName] = useState<string | null>(null);
   const [recommended, setRecommended] = useState<RecommendedKey[]>([]);
+  // Scope-aware key list (global + per-channel secrets). Fetched live rather
+  // than read from the snapshot so channel secrets and their managed flags show.
+  const [entries, setEntries] = useState<KeyEntry[]>([]);
   const reportError = useReportError();
 
   const isNew = selectedName === "__new__";
   const summary =
     selectedName && !isNew
-      ? snapshot.keys.find((k) => k.name === selectedName)
+      ? entries.find((k) => k.scope === "global" && k.name === selectedName)
       : null;
+
+  const globalKeys = useMemo(
+    () => entries.filter((e) => e.scope === "global"),
+    [entries],
+  );
+  // Channel secrets grouped by their owning channel, for a segregated section.
+  const channelGroups = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; keys: KeyEntry[] }>();
+    for (const e of entries) {
+      if (e.scope !== "channel" || !e.channel_id) continue;
+      const id = e.channel_id;
+      if (!m.has(id)) {
+        m.set(id, { id, name: e.channel_name ?? `Channel ${id.slice(0, 8)}`, keys: [] });
+      }
+      m.get(id)!.keys.push(e);
+    }
+    return [...m.values()];
+  }, [entries]);
 
   useEffect(() => {
     setSavedAt(null);
@@ -37,14 +58,18 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, isNew]);
 
-  // Refresh recommendations whenever the stored keys change (a save flips a
-  // key's `configured` flag). Remote-only; local mode returns an empty list.
+  // Refresh the key list + recommendations whenever the stored keys change (a
+  // save flips a key's `configured` flag). Remote-only bits (channel secrets,
+  // recommendations) are empty in local mode.
   useEffect(() => {
+    invoke<KeyEntry[]>("list_keys")
+      .then(setEntries)
+      .catch((e) => reportError("list_keys", e));
     invoke<RecommendedKey[]>("list_recommended_keys")
       .then(setRecommended)
       .catch((e) => reportError("list_recommended_keys", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot.keys]);
+  }, [snapshot.keys, savedAt]);
 
   const startNewKey = (name: string) => {
     setPendingName(name);
@@ -60,6 +85,8 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
             <span className="font-mono mx-1">$NAME</span> placeholders used by
             API tools.
           </p>
+          <StoredKeys keys={globalKeys} onSelect={onSelect} />
+          <ChannelSecrets groups={channelGroups} />
           <RecommendedKeys
             recommended={recommended}
             onAdd={startNewKey}
@@ -164,6 +191,128 @@ export default function KeysView({ snapshot, selectedName, onSelect }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+/// The keys actually stored in the agent's `keys.json` — the same list the
+/// sidebar shows. Mirrors the sidebar so the empty-state pane doesn't look like
+/// it's out of sync with it. Each row opens that key's editor for rotation.
+function StoredKeys({
+  keys,
+  onSelect,
+}: {
+  keys: KeyEntry[];
+  onSelect: (name: string | null) => void;
+}) {
+  if (keys.length === 0) return null;
+  return (
+    <div>
+      <h2 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+        Your stored keys
+      </h2>
+      <ul className="space-y-1.5">
+        {keys.map((k) => (
+          <li key={k.name}>
+            <button
+              onClick={() => onSelect(k.name)}
+              className="w-full flex items-center gap-3 px-3 py-2 bg-surface-1 border border-surface-3 rounded text-left hover:border-accent/50"
+            >
+              <span className="font-mono text-sm text-gray-200 truncate">
+                {k.name}
+              </span>
+              <div className="flex-1" />
+              <span className="font-mono text-xs text-gray-500 whitespace-nowrap">
+                {k.masked}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/// Secrets that belong to a gateway channel, grouped by channel and shown
+/// separately from account-wide keys. Managed secrets (written by the channel's
+/// connection, e.g. the Metalcraft Gateway) are locked and read-only — reconnect
+/// the channel to change them. Values are always masked.
+function ChannelSecrets({
+  groups,
+}: {
+  groups: { id: string; name: string; keys: KeyEntry[] }[];
+}) {
+  if (groups.length === 0) return null;
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <div key={g.id}>
+          <h2 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+            {g.name} · channel secrets
+          </h2>
+          <ul className="space-y-1.5">
+            {g.keys.map((k) => (
+              <SecretRow key={k.name} entry={k} />
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/// One channel-secret row: name, an optional managed lock, and a Reveal toggle
+/// that fetches the raw value on demand (the list only ever carries the mask).
+function SecretRow({ entry }: { entry: KeyEntry }) {
+  const reportError = useReportError();
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async () => {
+    if (revealed !== null) {
+      setRevealed(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      const value = await invoke<string>("reveal_key", {
+        name: entry.name,
+        channelId: entry.channel_id ?? null,
+      });
+      setRevealed(value);
+    } catch (e) {
+      reportError("reveal_key", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="flex items-center gap-3 px-3 py-2 bg-surface-1 border border-surface-3 rounded">
+      <span className="font-mono text-sm text-gray-200 truncate">{entry.name}</span>
+      {entry.managed && (
+        <span
+          className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface-2 text-gray-400 rounded"
+          title="Managed by this channel's connection — reconnect the channel to change it"
+        >
+          🔒 managed
+        </span>
+      )}
+      <div className="flex-1" />
+      <span
+        className={`font-mono text-xs whitespace-nowrap ${
+          revealed !== null ? "text-gray-300 select-all" : "text-gray-500"
+        }`}
+      >
+        {revealed !== null ? revealed : entry.masked}
+      </span>
+      <button
+        onClick={toggle}
+        disabled={busy}
+        className="shrink-0 text-xs text-accent-light hover:underline disabled:opacity-40"
+      >
+        {busy ? "…" : revealed !== null ? "Hide" : "Reveal"}
+      </button>
+    </li>
   );
 }
 

@@ -155,6 +155,19 @@ export interface KeySummary {
   masked: string;
 }
 
+/// A stored key with its scope, returned by the `list_keys` command. `global`
+/// keys are account-wide; `channel` keys are secrets owned by one gateway
+/// channel (with `channel_id`/`channel_name` set). `managed` keys are written by
+/// a connection/the platform and are read-only in the UI.
+export interface KeyEntry {
+  name: string;
+  masked: string;
+  scope: "global" | "channel";
+  channel_id?: string | null;
+  channel_name?: string | null;
+  managed: boolean;
+}
+
 /// A key an enabled integration pack declares it needs (`requires_env`), with
 /// whether it's already configured and which packs want it. Remote-only.
 export interface RecommendedKey {
@@ -310,6 +323,10 @@ export interface GatewaySettingField {
   label: string;
   input_type: string; // "text" | "tel" | "password" | "number" | "persona" | "model"
   required: boolean;
+  /** When true the value is a channel-scoped secret: saved to the key store
+   *  under this channel (via `save_key` with `channelId`), never into the
+   *  instance's plaintext settings. Rendered masked/write-only. */
+  secret?: boolean;
   placeholder?: string | null;
   help?: string | null;
 }

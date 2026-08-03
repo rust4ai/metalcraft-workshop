@@ -16,6 +16,11 @@ pub struct GatewaySettingField {
     pub input_type: String,
     #[serde(default)]
     pub required: bool,
+    /// When true the value is a channel-scoped secret (saved to the key store
+    /// under this channel), not a plaintext setting. Passed through to the
+    /// workshop UI, which renders it masked/write-only.
+    #[serde(default)]
+    pub secret: bool,
     #[serde(default)]
     pub placeholder: Option<String>,
     #[serde(default)]

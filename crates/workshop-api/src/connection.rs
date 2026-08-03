@@ -20,7 +20,7 @@ use crate::flows;
 use crate::gateway::{GatewayChannel, GatewayEvent, GatewayType};
 use crate::integration_packs::{PackDetail, PackSummary};
 use std::collections::HashMap;
-use crate::keys::{self, KeySummary, RecommendedKey};
+use crate::keys::{self, KeyEntry, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
 use crate::skills::{self, Skill};
@@ -93,9 +93,13 @@ pub trait ProjectConnection: Send + Sync {
     async fn save_api_tool(&self, name: &str, config: &ApiToolConfig) -> anyhow::Result<()>;
     async fn delete_api_tool(&self, name: &str) -> anyhow::Result<()>;
 
-    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>>;
-    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()>;
-    async fn delete_key(&self, name: &str) -> anyhow::Result<()>;
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeyEntry>>;
+    /// Upsert a key. `channel_id` targets a channel's secret scope; `None` is global.
+    async fn save_key(&self, name: &str, value: &str, channel_id: Option<&str>) -> anyhow::Result<()>;
+    /// Delete a key. `channel_id` targets a channel's secret scope; `None` is global.
+    async fn delete_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<()>;
+    /// Reveal a key's raw value. `channel_id` targets a channel's secret scope.
+    async fn reveal_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<String>;
 
     /// Keys that enabled integration packs declare they need. Remote-only —
     /// pack state lives on the agent, so local mode returns an empty list.
@@ -278,14 +282,17 @@ impl ProjectConnection for LocalConnection {
         api_tools::delete(&self.root, name)
     }
 
-    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>> {
-        Ok(keys::list(&self.root))
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeyEntry>> {
+        Ok(keys::list_entries(&self.root))
     }
-    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()> {
-        keys::save(&self.root, name, value)
+    async fn save_key(&self, name: &str, value: &str, channel_id: Option<&str>) -> anyhow::Result<()> {
+        keys::save(&self.root, name, value, channel_id)
     }
-    async fn delete_key(&self, name: &str) -> anyhow::Result<()> {
-        keys::delete(&self.root, name)
+    async fn delete_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<()> {
+        keys::delete(&self.root, name, channel_id)
+    }
+    async fn reveal_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<String> {
+        keys::reveal(&self.root, name, channel_id)
     }
     async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>> {
         // Recommendations are derived from enabled packs, which live on the
@@ -585,6 +592,13 @@ struct PutSkillBody<'a> {
 #[derive(Serialize)]
 struct PutKeyBody<'a> {
     value: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    channel_id: Option<&'a str>,
+}
+
+#[derive(Deserialize)]
+struct RevealKeyResponse {
+    value: String,
 }
 
 #[async_trait]
@@ -797,14 +811,14 @@ impl ProjectConnection for RemoteConnection {
         Ok(())
     }
 
-    async fn list_keys(&self) -> anyhow::Result<Vec<KeySummary>> {
+    async fn list_keys(&self) -> anyhow::Result<Vec<KeyEntry>> {
         let resp = ok_or_err(self.get("/api/v1/keys").send().await?, "GET keys").await?;
         Ok(resp.json().await?)
     }
-    async fn save_key(&self, name: &str, value: &str) -> anyhow::Result<()> {
+    async fn save_key(&self, name: &str, value: &str, channel_id: Option<&str>) -> anyhow::Result<()> {
         ok_or_err(
             self.put(&format!("/api/v1/keys/{name}"))
-                .json(&PutKeyBody { value })
+                .json(&PutKeyBody { value, channel_id })
                 .send()
                 .await?,
             "PUT key",
@@ -812,13 +826,22 @@ impl ProjectConnection for RemoteConnection {
         .await?;
         Ok(())
     }
-    async fn delete_key(&self, name: &str) -> anyhow::Result<()> {
-        ok_or_err(
-            self.delete(&format!("/api/v1/keys/{name}")).send().await?,
-            "DELETE key",
-        )
-        .await?;
+    async fn delete_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<()> {
+        let url = match channel_id {
+            Some(cid) => format!("/api/v1/keys/{name}?channel_id={cid}"),
+            None => format!("/api/v1/keys/{name}"),
+        };
+        ok_or_err(self.delete(&url).send().await?, "DELETE key").await?;
         Ok(())
+    }
+    async fn reveal_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<String> {
+        let url = match channel_id {
+            Some(cid) => format!("/api/v1/keys/{name}/reveal?channel_id={cid}"),
+            None => format!("/api/v1/keys/{name}/reveal"),
+        };
+        let resp = ok_or_err(self.get(&url).send().await?, "GET reveal key").await?;
+        let body: RevealKeyResponse = resp.json().await?;
+        Ok(body.value)
     }
     async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>> {
         let resp = ok_or_err(

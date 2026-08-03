@@ -7,7 +7,7 @@ import type {
   GatewayEvent,
   GatewaySettingField,
   GatewayType,
-  KeySummary,
+  KeyEntry,
   MetalcraftGatewayStatus,
   ProjectSnapshot,
 } from "../types";
@@ -65,11 +65,14 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
       const [t, c, k] = await Promise.all([
         invoke<GatewayType[]>("list_gateway_types"),
         invoke<GatewayChannel[]>("list_gateway_channels"),
-        invoke<KeySummary[]>("list_keys"),
+        invoke<KeyEntry[]>("list_keys"),
       ]);
       setTypes(t);
       setChannels(c);
-      setKeyNames(new Set(k.map((key) => key.name)));
+      // Required-env keys are account-wide, so only global-scope keys count as
+      // "configured" — channel secrets share short names (API_KEY, …) that must
+      // not falsely satisfy a type's requires_env.
+      setKeyNames(new Set(k.filter((key) => key.scope === "global").map((key) => key.name)));
       // If a provisioner-backed channel exists, refresh its live status for the chip.
       const hasProvisioner = c.some((ch) => {
         const ty = t.find((x) => x.id === ch.type_id);
@@ -194,11 +197,18 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
                       </p>
                     )}
                   </div>
-                  <ChannelToggle
-                    channelId={c.id}
-                    enabled={c.enabled}
-                    onChanged={refresh}
-                  />
+                  <div className="flex items-center gap-2 shrink-0">
+                    <ChannelToggle
+                      channelId={c.id}
+                      enabled={c.enabled}
+                      onChanged={refresh}
+                    />
+                    <ChannelDelete
+                      channelId={c.id}
+                      channelName={c.name}
+                      onDeleted={refresh}
+                    />
+                  </div>
                 </li>
               );
             })}
@@ -242,6 +252,44 @@ function ChannelToggle({
       }`}
     >
       {pending ? "…" : enabled ? "Disable" : "Enable"}
+    </button>
+  );
+}
+
+/// Per-row delete for a channel. Lives on the list so every channel type is
+/// deletable — including provisioner-backed ones whose edit view swaps the
+/// settings form (and its Delete button) for the Connect panel.
+function ChannelDelete({
+  channelId,
+  channelName,
+  onDeleted,
+}: {
+  channelId: string;
+  channelName: string;
+  onDeleted: () => void;
+}) {
+  const reportError = useReportError();
+  const [pending, setPending] = useState(false);
+  const remove = async () => {
+    if (!confirm(`Delete channel "${channelName}"?`)) return;
+    setPending(true);
+    try {
+      await invoke("delete_gateway_channel", { id: channelId });
+      onDeleted();
+    } catch (e) {
+      reportError("delete_gateway_channel", e);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <button
+      onClick={remove}
+      disabled={pending}
+      title="Delete channel"
+      className="px-2 py-1.5 text-xs rounded font-medium text-red-300 hover:bg-red-900/40 disabled:opacity-40"
+    >
+      {pending ? "…" : "Delete"}
     </button>
   );
 }
@@ -330,28 +378,77 @@ function ChannelForm({
   const [settings, setSettings] = useState<Record<string, string>>(
     channel?.settings ?? {},
   );
+  // Write-only drafts for secret fields (values never come back from the agent);
+  // a non-empty draft is saved to the channel's secret scope on save/rotation.
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({});
+  // Names of this channel's secrets already configured (edit mode) — for the ✓.
+  const [configuredSecrets, setConfiguredSecrets] = useState<Set<string>>(new Set());
   const [enabled, setEnabled] = useState(channel?.enabled ?? false);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"settings" | "events">("settings");
 
   const type = useMemo(() => types.find((t) => t.id === typeId), [types, typeId]);
+  const secretFields = useMemo(
+    () => (type?.settings ?? []).filter((f) => f.secret),
+    [type],
+  );
 
   const setField = (key: string, value: string) =>
     setSettings((s) => ({ ...s, [key]: value }));
+  const setSecret = (key: string, value: string) =>
+    setSecretDrafts((s) => ({ ...s, [key]: value }));
+
+  // Which secret fields already have a stored value for this channel.
+  useEffect(() => {
+    if (mode !== "edit" || !channel) return;
+    invoke<KeyEntry[]>("list_keys")
+      .then((ks) =>
+        setConfiguredSecrets(
+          new Set(
+            ks
+              .filter((k) => k.scope === "channel" && k.channel_id === channel.id)
+              .map((k) => k.name),
+          ),
+        ),
+      )
+      .catch((e) => reportError("list_keys", e));
+  }, [mode, channel, reportError]);
+
+  // Persist any entered secret drafts to the channel's secret scope.
+  const saveSecrets = async (channelId: string) => {
+    for (const f of secretFields) {
+      const v = secretDrafts[f.key];
+      if (v && v.trim()) {
+        await invoke("save_key", { name: f.key, value: v, channelId });
+      }
+    }
+  };
 
   const save = async () => {
     if (!name.trim() || !typeId) return;
     setSaving(true);
     try {
+      // Secret fields live in the channel's secret scope, never in `settings`.
+      const settingsToSave = Object.fromEntries(
+        Object.entries(settings).filter(
+          ([k]) => !secretFields.some((f) => f.key === k),
+        ),
+      );
       if (mode === "new") {
-        await invoke("create_gateway_channel", { typeId, name: name.trim(), settings });
+        const created = await invoke<GatewayChannel>("create_gateway_channel", {
+          typeId,
+          name: name.trim(),
+          settings: settingsToSave,
+        });
+        await saveSecrets(created.id);
       } else if (channel) {
         await invoke("update_gateway_channel", {
           id: channel.id,
           name: name.trim(),
           enabled,
-          settings,
+          settings: settingsToSave,
         });
+        await saveSecrets(channel.id);
       }
       onSaved();
     } catch (e) {
@@ -456,15 +553,26 @@ function ChannelForm({
           />
         </Field>
 
-        {type?.settings.map((field) => (
-          <SettingInput
-            key={field.key}
-            field={field}
-            value={settings[field.key] ?? ""}
-            personas={snapshot.personas.map((p) => p.slug)}
-            onChange={(v) => setField(field.key, v)}
+        {type?.settings
+          .filter((field) => !field.secret)
+          .map((field) => (
+            <SettingInput
+              key={field.key}
+              field={field}
+              value={settings[field.key] ?? ""}
+              personas={snapshot.personas.map((p) => p.slug)}
+              onChange={(v) => setField(field.key, v)}
+            />
+          ))}
+
+        {secretFields.length > 0 && (
+          <ChannelSecretFields
+            fields={secretFields}
+            drafts={secretDrafts}
+            configured={configuredSecrets}
+            onChange={setSecret}
           />
-        ))}
+        )}
 
         {type && type.requires_env.length > 0 && (
           <RequiredKeys
@@ -723,6 +831,60 @@ function ChannelEventsTab({ channelId }: { channelId: string }) {
       ) : (
         <GatewayEventList events={events} />
       )}
+    </div>
+  );
+}
+
+/// The channel's own secret fields (e.g. a manual PipeStreamr channel's API key
+/// and webhook secret). Values are write-only — the agent only tells us whether
+/// each is configured, never the value — so an input rotates/sets, and a ✓ marks
+/// an existing secret. Saved to this channel's secret scope (Keys tab › channel).
+function ChannelSecretFields({
+  fields,
+  drafts,
+  configured,
+  onChange,
+}: {
+  fields: GatewaySettingField[];
+  drafts: Record<string, string>;
+  configured: Set<string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded border border-surface-3 bg-surface-1/50 p-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs uppercase tracking-wide text-gray-500">
+          Channel secrets
+        </h3>
+        <span className="text-[10px] text-gray-600">
+          stored under this channel, not as account keys
+        </span>
+      </div>
+      {fields.map((field) => {
+        const isSet = configured.has(field.key);
+        const label = field.required && !isSet ? `${field.label} *` : field.label;
+        return (
+          <Field key={field.key} label={label}>
+            <input
+              type="password"
+              value={drafts[field.key] ?? ""}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => onChange(field.key, e.target.value)}
+              placeholder={
+                isSet ? "•••• configured — enter a value to rotate" : (field.placeholder ?? "")
+              }
+              className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded font-mono text-sm"
+            />
+            {field.help && (
+              <p className="text-[11px] text-gray-500 mt-1">{field.help}</p>
+            )}
+            {isSet && (
+              <p className="text-[11px] text-green-400 mt-1">✓ configured</p>
+            )}
+          </Field>
+        );
+      })}
     </div>
   );
 }
