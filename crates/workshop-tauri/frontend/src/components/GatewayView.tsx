@@ -36,6 +36,8 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
   // Live set of configured key names — fetched here (not read from the load-time
   // snapshot) so a key added in the Keys tab reflects as ✓ on next tab entry.
   const [keyNames, setKeyNames] = useState<Set<string>>(new Set());
+  // Live status for a connected Metalcraft Gateway channel (the persistent chip).
+  const [mgStatus, setMgStatus] = useState<MetalcraftGatewayStatus | null>(null);
 
   // Gateway state lives on the agent — local mode has nothing to show.
   if (snapshot.mode !== "remote") {
@@ -68,6 +70,18 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
       setTypes(t);
       setChannels(c);
       setKeyNames(new Set(k.map((key) => key.name)));
+      // If a provisioner-backed channel exists, refresh its live status for the chip.
+      const hasProvisioner = c.some((ch) => {
+        const ty = t.find((x) => x.id === ch.type_id);
+        return ty?.provisioner === "metalcraft-gateway";
+      });
+      if (hasProvisioner) {
+        invoke<MetalcraftGatewayStatus>("gateway_metalcraft_status")
+          .then(setMgStatus)
+          .catch(() => setMgStatus(null));
+      } else {
+        setMgStatus(null);
+      }
     } catch (e) {
       reportError("list_gateway_channels", e);
     }
@@ -171,6 +185,7 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
                           Enabled
                         </span>
                       )}
+                      {type?.provisioner === "metalcraft-gateway" && <MgStatusChip status={mgStatus} />}
                     </div>
                     {c.settings.from && (
                       <p className="text-xs text-gray-500 mt-1 font-mono">
@@ -499,6 +514,34 @@ function ChannelForm({
         )}
       </div>
     </div>
+  );
+}
+
+/// Persistent chip on a connected Metalcraft Gateway channel's row: at-a-glance
+/// health (green connected / amber setup needed / red attention).
+function MgStatusChip({ status }: { status: MetalcraftGatewayStatus | null }) {
+  let cls = "bg-gray-700/50 text-gray-400";
+  let label = "checking…";
+  if (status) {
+    if (status.connected) {
+      cls = "bg-emerald-900/40 text-emerald-300";
+      label = "connected";
+    } else if (!status.configured || status.error) {
+      cls = "bg-red-900/40 text-red-300";
+      label = "attention";
+    } else if (!status.registered) {
+      cls = "bg-amber-900/40 text-amber-300";
+      label = "register";
+    } else if (!status.verified) {
+      cls = "bg-amber-900/40 text-amber-300";
+      label = "verify";
+    } else {
+      cls = "bg-amber-900/40 text-amber-300";
+      label = "connect";
+    }
+  }
+  return (
+    <span className={`px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded ${cls}`}>{label}</span>
   );
 }
 
