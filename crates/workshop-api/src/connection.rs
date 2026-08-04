@@ -436,6 +436,15 @@ pub struct RemoteConnection {
     /// by whoever else holds a clone of this `Arc` (see [`with_shared_token`]).
     api_key: std::sync::Arc<std::sync::RwLock<String>>,
     client: reqwest::Client,
+    /// Separate client for the long-lived SSE endpoints (`chat_turn`,
+    /// `subscribe_chat_events`) with idle-connection reuse disabled. A new chat's
+    /// first turn is usually the first activity after an idle spell, so the
+    /// shared pooled `client` would often reuse a keep-alive socket the pod/LB
+    /// already closed — the read fails instantly and the desktop shows a spurious
+    /// "live connection lost — restored from saved state". These requests are
+    /// infrequent and run for seconds, so a fresh handshake each time is
+    /// negligible; CRUD calls keep the pooled `client`.
+    stream_client: reqwest::Client,
 }
 
 impl RemoteConnection {
@@ -481,10 +490,17 @@ impl RemoteConnection {
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(15))
             .build()?;
+        // Streaming client: same connect bound, but no idle-connection pooling so
+        // a turn never rides a stale keep-alive socket (see `stream_client`).
+        let stream_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .pool_max_idle_per_host(0)
+            .build()?;
         Ok(Self {
             base_url: trimmed.to_string(),
             api_key,
             client,
+            stream_client,
         })
     }
 
@@ -1027,7 +1043,7 @@ impl ProjectConnection for RemoteConnection {
         // streaming turn must NOT carry the per-request timeout, or a turn that
         // runs longer than that deadline gets its SSE stream killed mid-flight.
         let resp = self
-            .client
+            .stream_client
             .post(self.url(&format!("/api/v1/chats/{id}/turn")))
             .bearer_auth(self.bearer())
             .json(&Body { message })
@@ -1051,7 +1067,7 @@ impl ProjectConnection for RemoteConnection {
         // timeout so an idle subscription (waiting for a follow-up to fire) isn't
         // torn down mid-wait.
         let resp = self
-            .client
+            .stream_client
             .get(self.url(&format!("/api/v1/chats/{id}/events")))
             .bearer_auth(self.bearer())
             .send()
