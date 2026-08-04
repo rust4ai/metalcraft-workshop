@@ -27,10 +27,28 @@ Point it at a `metalcraft-agent` project directory and you get:
   compactions and config changes. New turn files appear in real time as the
   agent runs (filesystem watcher).
 
+## Connecting to a remote agent pod
+
+Besides opening a local project directory, the Workshop can sign in with
+**Metalcraft ID** (OIDC) and connect to a `metalcraft-agent` **pod** you run on
+the hosted cluster — list your pods, pick one, and drive its chat/keys/gateway
+surfaces over the network.
+
+Auth is **OIDC-only — no static API key is stored**. To talk to a pod's
+`/api/v1/*` API, the Workshop mints a short-lived, audience-scoped
+(`pod:{slug}`) **connection token** from the control plane
+(`POST /api/pods/{slug}/connection/mint`) and sends it as the pod's Bearer. That
+mint is a general per-pod, per-owner primitive: any Metalcraft ID–authenticated
+client that owns the pod can mint one — it is **not** specific to the Workshop
+and has nothing to do with the Metalcraft Gateway. The token lives ~1h and a
+background refresher re-mints it before expiry, so long chats never drop. For a
+self-hosted agent you point at directly, the manual **API key (Bearer)** field
+still works.
+
 ## Getting started
 
-The Workshop is a **viewer/editor for a `metalcraft-agent` project** — a
-directory that holds `personas/`, `skills/`, `flows/`, and diagnostics
+The Workshop is also a **viewer/editor for a local `metalcraft-agent` project** —
+a directory that holds `personas/`, `skills/`, `flows/`, and diagnostics
 `logs/`. You point the app at such a directory (or launch it and pick one
 from the file dialog), so have a metalcraft-agent project on hand. There are
 two ways to run it.

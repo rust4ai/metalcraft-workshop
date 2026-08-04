@@ -1150,7 +1150,7 @@ async fn mint_pod_connection_token(
     slug: &str,
 ) -> Result<(String, u64), String> {
     let resp = reqwest::Client::new()
-        .post(format!("{base}/api/pods/{slug}/connection/refresh"))
+        .post(format!("{base}/api/pods/{slug}/connection/mint"))
         .bearer_auth(pat)
         .send()
         .await
