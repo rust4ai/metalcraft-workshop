@@ -350,6 +350,11 @@ export interface MetalcraftGatewayStatus {
   registered: boolean;
   verified: boolean;
   connected: boolean;
+  /** Inbound Pull long-poll is live and draining — intrinsic "receiving now" liveness. */
+  streaming?: boolean;
+  /** Push-mode drift: the gateway's stored webhook no longer points at this pod (the
+   *  old "green light, dead pipe" state). Self-heals; surfaced as "reconnecting". */
+  webhook_stale?: boolean;
   active_number?: string | null;
   channel?: string | null;
   has_public_url: boolean;

@@ -632,7 +632,15 @@ function MgStatusChip({ status }: { status: MetalcraftGatewayStatus | null }) {
   let cls = "bg-gray-700/50 text-gray-400";
   let label = "checking…";
   if (status) {
-    if (status.connected) {
+    if (status.connected && status.streaming) {
+      // Pull mode, long-poll live: we *know* inbound is flowing.
+      cls = "bg-emerald-900/40 text-emerald-300";
+      label = "receiving";
+    } else if (status.connected && status.webhook_stale) {
+      // Push-mode drift (stale webhook) — self-healing.
+      cls = "bg-amber-900/40 text-amber-300";
+      label = "reconnecting";
+    } else if (status.connected) {
       cls = "bg-emerald-900/40 text-emerald-300";
       label = "connected";
     } else if (!status.configured || status.error) {
@@ -729,7 +737,15 @@ function MetalcraftGatewayConnect({
         </p>
       ) : status.connected ? (
         <div className="space-y-2">
-          <p className="text-emerald-300">✓ Connected as {status.active_number}</p>
+          {status.streaming ? (
+            <p className="text-emerald-300">✓ Receiving as {status.active_number}</p>
+          ) : status.webhook_stale ? (
+            <p className="text-amber-300">
+              Connected as {status.active_number} · reconnecting inbound…
+            </p>
+          ) : (
+            <p className="text-emerald-300">✓ Connected as {status.active_number}</p>
+          )}
           <button
             onClick={connect}
             disabled={busy}
