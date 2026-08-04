@@ -1308,7 +1308,12 @@ fn setup_logging() {
     let log_file = std::sync::Arc::new(std::sync::Mutex::new(log_file));
 
     Builder::new()
-        .filter_module("workshop", LevelFilter::Info)
+        // The binary target is `metalcraft-workshop` (module `metalcraft_workshop`),
+        // so a `workshop`-prefixed filter never matched it and silently dropped every
+        // one of this app's own log lines. Enable both the binary and the workshop-api
+        // crate explicitly.
+        .filter_module("metalcraft_workshop", LevelFilter::Info)
+        .filter_module("workshop_api", LevelFilter::Info)
         .filter_level(LevelFilter::Warn)
         .format({
             let log_file = log_file.clone();
