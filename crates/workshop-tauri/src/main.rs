@@ -896,6 +896,18 @@ fn control_plane_base() -> String {
         .unwrap_or_else(|| "https://pods.metalcraftai.com".to_string())
 }
 
+/// A reqwest client for control-plane / metalcraft-id calls with sane timeouts.
+/// Without these, an unresponsive endpoint makes `.send().await` block forever,
+/// which surfaces to the user as a frozen Connect/login with no error. A bounded
+/// connect + overall timeout turns that into a fast, visible failure instead.
+fn control_plane_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .unwrap_or_default()
+}
+
 /// The persisted metalcraft-id session — a long-lived PAT plus the account email,
 /// so relaunching the app goes straight to the pod list without re-login.
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -951,7 +963,7 @@ fn open_in_browser(url: &str) {
 #[tauri::command]
 async fn metalcraft_login_start() -> Result<serde_json::Value, String> {
     let base = metalcraft_id_base();
-    let client = reqwest::Client::new();
+    let client = control_plane_client();
     let resp = client
         .post(format!("{base}/auth/device/start"))
         .send()
@@ -973,7 +985,7 @@ async fn metalcraft_login_start() -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn metalcraft_login_poll(device_code: String) -> Result<serde_json::Value, String> {
     let base = metalcraft_id_base();
-    let client = reqwest::Client::new();
+    let client = control_plane_client();
     let resp = client
         .post(format!("{base}/auth/device/poll"))
         .json(&serde_json::json!({ "device_code": device_code }))
@@ -1028,7 +1040,7 @@ async fn metalcraft_logout() -> Result<(), String> {
 async fn list_metalcraft_pods() -> Result<serde_json::Value, String> {
     let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
     let base = control_plane_base();
-    let resp = reqwest::Client::new()
+    let resp = control_plane_client()
         .get(format!("{base}/api/pods"))
         .bearer_auth(&session.pat)
         .send()
@@ -1057,8 +1069,11 @@ async fn open_metalcraft_pod(
 
     // Resolve the picked id to its slug + public URL (ownership-scoped list), then
     // mint the connection token the pod's workshop API accepts.
+    log::info!("connect: resolving pod {pod_id} via {base}");
     let (slug, url) = resolve_metalcraft_pod(&base, &session.pat, &pod_id).await?;
+    log::info!("connect: resolved {slug} at {url}; minting connection token");
     let (token, ttl) = mint_pod_connection_token(&base, &session.pat, &slug).await?;
+    log::info!("connect: token minted for {slug}; waiting for pod API to answer");
 
     let token_cell = std::sync::Arc::new(std::sync::RwLock::new(token));
     let conn = RemoteConnection::with_shared_token(url.clone(), token_cell.clone())
@@ -1112,7 +1127,7 @@ async fn resolve_metalcraft_pod(
     pat: &str,
     pod_id: &str,
 ) -> Result<(String, String), String> {
-    let resp = reqwest::Client::new()
+    let resp = control_plane_client()
         .get(format!("{base}/api/pods"))
         .bearer_auth(pat)
         .send()
@@ -1149,7 +1164,7 @@ async fn mint_pod_connection_token(
     pat: &str,
     slug: &str,
 ) -> Result<(String, u64), String> {
-    let resp = reqwest::Client::new()
+    let resp = control_plane_client()
         .post(format!("{base}/api/pods/{slug}/connection/mint"))
         .bearer_auth(pat)
         .send()
