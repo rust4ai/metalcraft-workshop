@@ -208,10 +208,6 @@ export function useWorkshop() {
     setRemoteBaseUrl(null);
     await refreshRecents();
   }, [refreshRecents]);
-  const rotateMetalcraftPodKey = useCallback(
-    (podId: string) => invoke<void>("rotate_metalcraft_pod_key", { podId }),
-    [],
-  );
 
   return {
     snapshot,
@@ -233,7 +229,6 @@ export function useWorkshop() {
     metalcraftLogout,
     listMetalcraftPods,
     openMetalcraftPod,
-    rotateMetalcraftPodKey,
     chats,
     sessions,
     refreshChats,

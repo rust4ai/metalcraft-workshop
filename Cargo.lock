@@ -5242,7 +5242,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-api"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5264,7 +5264,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-tauri"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",

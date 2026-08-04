@@ -55,7 +55,6 @@ export default function App() {
           logout: workshop.metalcraftLogout,
           listPods: workshop.listMetalcraftPods,
           openPod: workshop.openMetalcraftPod,
-          rotatePodKey: workshop.rotateMetalcraftPodKey,
         }}
       />
     );

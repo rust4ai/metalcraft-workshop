@@ -14,7 +14,6 @@ export interface MetalcraftApi {
   logout: () => Promise<void>;
   listPods: () => Promise<unknown[]>;
   openPod: (podId: string) => Promise<void>;
-  rotatePodKey: (podId: string) => Promise<void>;
 }
 
 interface Props {
@@ -162,7 +161,6 @@ function MetalcraftPanel({ api }: { api: MetalcraftApi }) {
   const [pods, setPods] = useState<MetalcraftPod[]>([]);
   const [podsLoading, setPodsLoading] = useState(false);
   const [busyPod, setBusyPod] = useState<string | null>(null);
-  const [needsRotate, setNeedsRotate] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   // Cancel any in-flight poll loop when the panel unmounts (e.g. on connect).
@@ -252,24 +250,16 @@ function MetalcraftPanel({ api }: { api: MetalcraftApi }) {
     await api.logout().catch(() => {});
     setEmail(null);
     setPods([]);
-    setNeedsRotate(null);
     setErr(null);
   };
 
-  const connect = async (pod: MetalcraftPod, rotateFirst = false) => {
+  const connect = async (pod: MetalcraftPod) => {
     setBusyPod(pod.id);
     setErr(null);
     try {
-      if (rotateFirst) await api.rotatePodKey(pod.id);
       await api.openPod(pod.id); // on success this whole picker unmounts
-      setNeedsRotate(null);
     } catch (e) {
-      const msg = String(e);
-      if (msg.includes("needs_rotate")) {
-        setNeedsRotate(pod.id);
-      } else {
-        setErr(msg);
-      }
+      setErr(String(e));
     } finally {
       setBusyPod(null);
     }
@@ -381,25 +371,14 @@ function MetalcraftPanel({ api }: { api: MetalcraftApi }) {
                   </div>
                   <StatusBadge status={pod.status} />
                 </div>
-                {needsRotate === pod.id ? (
-                  <button
-                    onClick={() => connect(pod, true)}
-                    disabled={busy}
-                    className="px-3 py-1.5 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
-                    title="This pod has no stored key yet — generate one (restarts the pod), then connect."
-                  >
-                    {busy ? "Working…" : "Generate key & connect"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => connect(pod)}
-                    disabled={!active || busy}
-                    className="px-3 py-1.5 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
-                    title={active ? "Connect to this agent" : `Pod is ${pod.status}`}
-                  >
-                    {busy ? "Connecting…" : "Connect"}
-                  </button>
-                )}
+                <button
+                  onClick={() => connect(pod)}
+                  disabled={!active || busy}
+                  className="px-3 py-1.5 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
+                  title={active ? "Connect to this agent" : `Pod is ${pod.status}`}
+                >
+                  {busy ? "Connecting…" : "Connect"}
+                </button>
               </li>
             );
           })}

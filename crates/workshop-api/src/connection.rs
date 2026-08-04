@@ -430,12 +430,35 @@ impl ProjectConnection for LocalConnection {
 
 pub struct RemoteConnection {
     base_url: String,
-    api_key: String,
+    /// The Bearer credential, held behind a lock so a background task can swap it
+    /// out. For a static key (self-hosted `WORKSHOP_API_KEY`, manual entry) it
+    /// never changes; for an OIDC connection token it is re-minted before expiry
+    /// by whoever else holds a clone of this `Arc` (see [`with_shared_token`]).
+    api_key: std::sync::Arc<std::sync::RwLock<String>>,
     client: reqwest::Client,
 }
 
 impl RemoteConnection {
+    /// Connect with a fixed Bearer key that never changes (self-hosted agents in
+    /// `--api <KEY>` mode, or a manually-entered key).
     pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> anyhow::Result<Self> {
+        Self::build(base_url, std::sync::Arc::new(std::sync::RwLock::new(api_key.into())))
+    }
+
+    /// Connect with a refreshable Bearer token. The caller keeps a clone of
+    /// `token` and re-mints it (e.g. an audience-scoped Metalcraft ID connection
+    /// token nearing its 1h expiry); every request reads the current value.
+    pub fn with_shared_token(
+        base_url: impl Into<String>,
+        token: std::sync::Arc<std::sync::RwLock<String>>,
+    ) -> anyhow::Result<Self> {
+        Self::build(base_url, token)
+    }
+
+    fn build(
+        base_url: impl Into<String>,
+        api_key: std::sync::Arc<std::sync::RwLock<String>>,
+    ) -> anyhow::Result<Self> {
         let raw = base_url.into();
         let trimmed = raw.trim().trim_end_matches('/');
         if trimmed.is_empty() {
@@ -460,13 +483,19 @@ impl RemoteConnection {
             .build()?;
         Ok(Self {
             base_url: trimmed.to_string(),
-            api_key: api_key.into(),
+            api_key,
             client,
         })
     }
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
+    }
+
+    /// The current Bearer value. Cloned per request so the lock isn't held across
+    /// the await; a poisoned lock still yields the last-written token.
+    fn bearer(&self) -> String {
+        self.api_key.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Hard cap for the non-streaming CRUD calls. The streaming `chat_turn`
@@ -476,25 +505,25 @@ impl RemoteConnection {
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .get(self.url(path))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
     fn put(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .put(self.url(path))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
     fn delete(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .delete(self.url(path))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
         self.client
             .post(self.url(path))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
 }
@@ -1000,7 +1029,7 @@ impl ProjectConnection for RemoteConnection {
         let resp = self
             .client
             .post(self.url(&format!("/api/v1/chats/{id}/turn")))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .json(&Body { message })
             .send()
             .await?;
@@ -1024,7 +1053,7 @@ impl ProjectConnection for RemoteConnection {
         let resp = self
             .client
             .get(self.url(&format!("/api/v1/chats/{id}/events")))
-            .bearer_auth(&self.api_key)
+            .bearer_auth(self.bearer())
             .send()
             .await?;
         if !resp.status().is_success() {

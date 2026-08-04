@@ -30,6 +30,19 @@ struct AppState {
     /// follow-ups). At most one runs at a time — starting a new subscription or
     /// closing the chat aborts the previous.
     events_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Background task re-minting a Metalcraft pod's short-lived connection token
+    /// before it expires. At most one runs — connecting to a pod (or disconnecting)
+    /// aborts the previous. Only present for OIDC pod connections, not manual keys.
+    metalcraft_refresh: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl AppState {
+    /// Stop any running connection-token refresher (on disconnect / new connect).
+    fn abort_metalcraft_refresh(&self) {
+        if let Some(handle) = self.metalcraft_refresh.lock().take() {
+            handle.abort();
+        }
+    }
 }
 
 impl AppState {
@@ -64,6 +77,7 @@ async fn open_project(
     let conn: Arc<dyn ProjectConnection> = Arc::new(LocalConnection::new(path.clone()));
     let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
 
+    state.abort_metalcraft_refresh();
     *state.connection.lock() = Some(conn);
     let st = state.inner().clone();
     let watcher = watcher::start_watching(&path, move |ChangedPath { path, kind }| {
@@ -91,6 +105,7 @@ async fn open_remote(
     let conn: Arc<dyn ProjectConnection> = Arc::new(conn);
     let snapshot = conn.snapshot().await.map_err(|e| e.to_string())?;
 
+    state.abort_metalcraft_refresh();
     *state.connection.lock() = Some(conn);
     *state.watcher.lock() = None; // remote mode has no local file watcher
 
@@ -101,6 +116,7 @@ async fn open_remote(
 
 #[tauri::command]
 async fn close_project(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.abort_metalcraft_refresh();
     *state.connection.lock() = None;
     *state.watcher.lock() = None;
     state.emit(WorkshopEvent::ProjectClosed);
@@ -1027,9 +1043,10 @@ async fn list_metalcraft_pods() -> Result<serde_json::Value, String> {
     resp.json().await.map_err(|e| e.to_string())
 }
 
-/// Reveal a pod's workshop key and connect to it (reuses the Remote-agent path).
-/// Errors with the literal string `needs_rotate` when the pod has no stored key
-/// yet, so the UI can offer to generate one.
+/// Connect to one of the signed-in account's agent pods. Mints a short-lived,
+/// audience-scoped Metalcraft ID connection token from the control plane and uses
+/// it as the pod's Bearer — no static workshop key involved. A background task
+/// keeps the token fresh so a long-lived desktop session doesn't lapse.
 #[tauri::command]
 async fn open_metalcraft_pod(
     pod_id: String,
@@ -1037,37 +1054,20 @@ async fn open_metalcraft_pod(
 ) -> Result<(), String> {
     let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
     let base = control_plane_base();
-    let resp = reqwest::Client::new()
-        .get(format!("{base}/api/pods/{pod_id}/workshop-key"))
-        .bearer_auth(&session.pat)
-        .send()
-        .await
-        .map_err(|e| format!("could not reach the control plane: {e}"))?;
-    if resp.status() == reqwest::StatusCode::CONFLICT {
-        return Err("needs_rotate".to_string());
-    }
-    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err("session expired — sign in to Metalcraft again".to_string());
-    }
-    if !resp.status().is_success() {
-        return Err(format!("could not fetch pod key ({})", resp.status()));
-    }
-    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let url = body.get("url").and_then(|v| v.as_str()).ok_or("pod URL missing")?.to_string();
-    let key = body
-        .get("workshop_api_key")
-        .and_then(|v| v.as_str())
-        .ok_or("pod key missing")?
-        .to_string();
 
-    let conn = RemoteConnection::new(url.clone(), key.clone())
+    // Resolve the picked id to its slug + public URL (ownership-scoped list), then
+    // mint the connection token the pod's workshop API accepts.
+    let (slug, url) = resolve_metalcraft_pod(&base, &session.pat, &pod_id).await?;
+    let (token, ttl) = mint_pod_connection_token(&base, &session.pat, &slug).await?;
+
+    let token_cell = std::sync::Arc::new(std::sync::RwLock::new(token));
+    let conn = RemoteConnection::with_shared_token(url.clone(), token_cell.clone())
         .map_err(|e| format!("remote client: {e}"))?;
     let conn: Arc<dyn ProjectConnection> = Arc::new(conn);
 
-    // A pod that was just (re)started — right after a key rotation, or waking from
-    // suspend — needs time before its HTTP API answers; until a healthy backend
-    // exists the ingress returns 503 immediately. So a rotate-then-connect races
-    // the very restart it triggered. Be patient: poll every 15s, up to 10 times
+    // A pod that was just (re)started — waking from suspend, or freshly scheduled —
+    // needs time before its HTTP API answers; until a healthy backend exists the
+    // ingress returns 503 immediately. Be patient: poll every 15s, up to 10 times
     // (~2.5 min), allowing for a full reschedule + image pull.
     let mut snapshot = None;
     let mut last_err = String::new();
@@ -1092,29 +1092,118 @@ async fn open_metalcraft_pod(
         format!("pod did not become ready in time (it may still be starting) — try Connect again: {last_err}")
     })?;
 
+    // Swap in the new connection and (re)start keeping its token fresh.
+    state.abort_metalcraft_refresh();
     *state.connection.lock() = Some(conn);
     *state.watcher.lock() = None; // remote mode has no local file watcher
+    *state.metalcraft_refresh.lock() = Some(spawn_token_refresher(base, slug, token_cell, ttl));
+
     state.emit(WorkshopEvent::ProjectOpened(snapshot));
-    persist_recent(RecentEntry::remote(&url, &key));
+    // No recents entry: Metalcraft pods are re-listed fresh from the control plane
+    // in the login tab, and a stored connection token would be stale within the hour.
     Ok(())
 }
 
-/// Rotate a pod's workshop key (restarts the pod). Used to recover a pod that has
-/// no stored key yet, so the app can then connect via [`open_metalcraft_pod`].
-#[tauri::command]
-async fn rotate_metalcraft_pod_key(pod_id: String) -> Result<(), String> {
-    let session = load_metalcraft_session().ok_or("not signed in to Metalcraft")?;
-    let base = control_plane_base();
+/// Resolve one of the signed-in account's pods by id to its `(slug, public URL)`
+/// via the ownership-scoped control-plane list (only the caller's pods appear,
+/// so the URL we later Bearer against is authoritative — never user-supplied).
+async fn resolve_metalcraft_pod(
+    base: &str,
+    pat: &str,
+    pod_id: &str,
+) -> Result<(String, String), String> {
     let resp = reqwest::Client::new()
-        .post(format!("{base}/api/pods/{pod_id}/workshop-key"))
-        .bearer_auth(&session.pat)
+        .get(format!("{base}/api/pods"))
+        .bearer_auth(pat)
         .send()
         .await
         .map_err(|e| format!("could not reach the control plane: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("could not rotate pod key ({})", resp.status()));
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("session expired — sign in to Metalcraft again".to_string());
     }
-    Ok(())
+    if !resp.status().is_success() {
+        return Err(format!("control plane returned {}", resp.status()));
+    }
+    let pods: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let entry = pods
+        .as_array()
+        .and_then(|arr| arr.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(pod_id)))
+        .ok_or("pod not found")?;
+    let slug = entry.get("slug").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let url = entry
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_string();
+    if slug.is_empty() || url.is_empty() {
+        return Err("control plane returned no slug/url".to_string());
+    }
+    Ok((slug, url))
+}
+
+/// Mint a fresh audience-scoped (`pod:{slug}`) connection token from the control
+/// plane. Returns `(token, ttl_secs)`.
+async fn mint_pod_connection_token(
+    base: &str,
+    pat: &str,
+    slug: &str,
+) -> Result<(String, u64), String> {
+    let resp = reqwest::Client::new()
+        .post(format!("{base}/api/pods/{slug}/connection/refresh"))
+        .bearer_auth(pat)
+        .send()
+        .await
+        .map_err(|e| format!("could not reach the control plane: {e}"))?;
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("session expired — sign in to Metalcraft again".to_string());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("could not mint connection token ({})", resp.status()));
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let token = body
+        .get("connection_token")
+        .and_then(|v| v.as_str())
+        .ok_or("connection token missing")?
+        .to_string();
+    let ttl = body.get("expires_in").and_then(|v| v.as_u64()).unwrap_or(3600);
+    Ok((token, ttl))
+}
+
+/// Spawn the loop that keeps a pod's connection token fresh: sleep until shortly
+/// before expiry, re-mint with the current on-disk session, and write the new
+/// token into the shared cell the connection reads. Stops if the user signed out
+/// or the control plane refuses — the next pod call then 401s and the UI prompts
+/// a reconnect.
+fn spawn_token_refresher(
+    base: String,
+    slug: String,
+    token_cell: std::sync::Arc<std::sync::RwLock<String>>,
+    mut ttl: u64,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            // Refresh 5 min before expiry (min 60s) so a valid token always overlaps.
+            let sleep_secs = ttl.saturating_sub(300).max(60);
+            tokio::time::sleep(std::time::Duration::from_secs(sleep_secs)).await;
+            let Some(session) = load_metalcraft_session() else {
+                log::info!("token refresher for {slug}: signed out, stopping");
+                return;
+            };
+            match mint_pod_connection_token(&base, &session.pat, &slug).await {
+                Ok((token, new_ttl)) => {
+                    *token_cell.write().unwrap_or_else(|e| e.into_inner()) = token;
+                    ttl = new_ttl;
+                    log::info!("refreshed connection token for {slug}");
+                }
+                Err(e) => {
+                    log::warn!("token refresh failed for {slug}: {e}; stopping");
+                    return;
+                }
+            }
+        }
+    })
 }
 
 // ---- Recents ----
@@ -1243,6 +1332,7 @@ fn main() {
                 connection: Mutex::new(None),
                 watcher: Mutex::new(None),
                 events_task: Mutex::new(None),
+                metalcraft_refresh: Mutex::new(None),
                 app_handle: handle.clone(),
             });
             handle.manage(state.clone());
@@ -1341,7 +1431,6 @@ fn main() {
             metalcraft_logout,
             list_metalcraft_pods,
             open_metalcraft_pod,
-            rotate_metalcraft_pod_key,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");
