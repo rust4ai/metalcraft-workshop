@@ -477,6 +477,7 @@ export type ChatEvent =
       result: ChatWireMessage;
     }
   | { kind: "reply"; content: string }
+  | { kind: "error"; code: string; message: string; retryable: boolean }
   | { kind: "done"; status: string; reason?: string | null };
 
 /// Emitted on the Tauri event bus per streaming chat turn.

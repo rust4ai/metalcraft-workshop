@@ -239,6 +239,9 @@ function ChatTranscript({
   // Diagnostics session the in-flight turn logs to, captured from the
   // `turn_started` event so a turn failure can deep-link to its session logs.
   const turnSessionIdRef = useRef<string | null>(null);
+  // Friendly, user-safe message from an `error` frame this turn. The trailing
+  // `done{status:"failed"}` prefers it over the raw provider-error `reason`.
+  const turnErrorRef = useRef<string | null>(null);
 
   // Fetch the agent's persisted copy of the chat and render the transcript
   // from it. This is the single source of truth: the same grouping is used
@@ -336,6 +339,7 @@ function ChatTranscript({
       switch (p.kind) {
         case "turn_started":
           turnSessionIdRef.current = p.session_id ?? null;
+          turnErrorRef.current = null;
           // A new turn supersedes any settle poll still running for the prior
           // one, and its pre-turn persisted count becomes the settle baseline.
           if (settlePollRef.current) settlePollRef.current.cancelled = true;
@@ -389,13 +393,22 @@ function ChatTranscript({
           setActivity(null);
           setTurns((prev) => fillToolResult(prev, p.tool_call_id, p.result, p.duration_ms));
           break;
+        case "error":
+          // A classified, user-safe turn failure (e.g. out of inference
+          // credits). Show the friendly message rather than the raw provider
+          // error; the trailing `done` reuses it via `turnErrorRef`.
+          setActivity(null);
+          turnErrorRef.current = p.message;
+          setStatus(p.message);
+          break;
         case "done":
           setActivity(null);
           setSending(false);
           setStatus(
             p.status === "completed"
               ? ""
-              : `${p.status}${p.reason ? `: ${p.reason}` : ""}`,
+              : (turnErrorRef.current ??
+                  `${p.status}${p.reason ? `: ${p.reason}` : ""}`),
           );
           if (p.status === "completed") {
             // Clean terminal: the agent has persisted the chat. Reconcile the
