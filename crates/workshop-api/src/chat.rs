@@ -83,11 +83,29 @@ pub enum ChatEvent {
     /// tool-only mode this — not `LlmCompleted` — carries the assistant's
     /// message; the workshop renders it as the reply bubble.
     Reply { content: String },
+    /// A classified, user-safe turn failure (e.g. out of inference credits),
+    /// emitted just before the trailing `Done`. Newer agents (>=0.13.0) send
+    /// this so the desktop can render `message` instead of the raw provider
+    /// error chain; `code` is the machine-readable identifier and `retryable`
+    /// hints whether trying again is worthwhile.
+    Error {
+        code: String,
+        message: String,
+        #[serde(default)]
+        retryable: bool,
+    },
     Done {
         status: String,
         #[serde(default)]
         reason: Option<String>,
     },
+    /// Any event kind this build doesn't recognize. Forward-compat guard: a
+    /// newer agent may emit frames added after this client shipped, and an
+    /// internally-tagged enum otherwise fails to deserialize an unknown tag —
+    /// which the SSE decoder would surface as a spurious transport error. The
+    /// UI ignores this variant.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Result of running a flow. Carries both the legacy v1 shape (`prompts`) and
