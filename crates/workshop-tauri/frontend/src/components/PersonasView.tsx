@@ -127,7 +127,7 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
         <Field label="Skills">
           <SkillSelector
             available={snapshot.skills.map((s) => s.slug)}
-            selected={persona.skills}
+            selected={persona.skills ?? []}
             onChange={(skills) => setPersona({ ...persona, skills })}
           />
         </Field>

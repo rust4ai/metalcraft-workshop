@@ -190,7 +190,7 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
                       )}
                       {type?.provisioner === "metalcraft-gateway" && <MgStatusChip status={mgStatus} />}
                     </div>
-                    {c.settings.from && (
+                    {c.settings?.from && (
                       <p className="text-xs text-gray-500 mt-1 font-mono">
                         {c.settings.from}
                         {c.settings.persona ? ` · ${c.settings.persona}` : ""}
@@ -200,7 +200,7 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
                   <div className="flex items-center gap-2 shrink-0">
                     <ChannelToggle
                       channelId={c.id}
-                      enabled={c.enabled}
+                      enabled={c.enabled ?? false}
                       onChanged={refresh}
                     />
                     <ChannelDelete
@@ -553,7 +553,7 @@ function ChannelForm({
           />
         </Field>
 
-        {type?.settings
+        {(type?.settings ?? [])
           .filter((field) => !field.secret)
           .map((field) => (
             <SettingInput
@@ -574,9 +574,9 @@ function ChannelForm({
           />
         )}
 
-        {type && type.requires_env.length > 0 && (
+        {type && (type.requires_env?.length ?? 0) > 0 && (
           <RequiredKeys
-            keys={type.requires_env}
+            keys={type.requires_env ?? []}
             configured={configuredKeys}
             onGoToKeys={onGoToKeys}
             clickable={mode === "edit"}

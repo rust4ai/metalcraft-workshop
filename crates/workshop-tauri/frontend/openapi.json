@@ -1,0 +1,3177 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Metalcraft Agent API",
+    "description": "The pod's workshop admin API. Manages personas, skills, flows, keys, chats, diagnostics sessions, integration packs, and gateway channels. Authenticate with a Bearer token: the static WORKSHOP_API_KEY or a Metalcraft ID token (mck_…) scoped to this pod.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.15.0"
+  },
+  "paths": {
+    "/api/v1/api-tools": {
+      "get": {
+        "tags": [
+          "api-tools"
+        ],
+        "operationId": "list_api_tools",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiToolSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-tools/{name}": {
+      "get": {
+        "tags": [
+          "api-tools"
+        ],
+        "operationId": "get_api_tool",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Tool name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpApiToolConfig"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "api-tools"
+        ],
+        "operationId": "put_api_tool",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Tool name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HttpApiToolConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "api-tools"
+        ],
+        "operationId": "delete_api_tool",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Tool name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/chats": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "operationId": "list_chats",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "operationId": "post_create_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chats/{id}": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "operationId": "get_chat",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chats"
+        ],
+        "operationId": "delete_chat",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/chats/{id}/events": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Live subscription to a chat's *agent-initiated* turns (scheduled follow-ups).\nThe workshop opens this when a chat is on screen so a follow-up that fires\nwhile the user is idle streams in without a page refresh. Normal\nuser-initiated turns still come back on their own `POST .../turn` response.",
+        "operationId": "get_chat_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of agent-initiated ChatEvent frames",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chats/{id}/turn": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Run one turn against the chat session. Streams new messages as Server-Sent\nEvents as the agent steps; closes the connection when the executor returns.",
+        "operationId": "post_chat_turn",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatTurnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream (text/event-stream) of ChatEvent frames",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatEvent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "operationId": "list_diagnostics",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DiagnosticsSessionSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/diagnostics/{id}": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "operationId": "get_diagnostics_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsSession"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flow-runs": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "List persisted flow runs, optionally filtered by `?flow_id=`.",
+        "operationId": "list_flow_runs",
+        "responses": {
+          "200": {
+            "description": "Flow run summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flow-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Get one flow run by id.",
+        "operationId": "get_flow_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Flow run id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flow run detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flow-runs/{run_id}/resume": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Resume a paused flow run.",
+        "operationId": "post_resume_flow_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Flow run id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeFlowRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Resumed run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flow-templates": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "list_flow_templates",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FlowTemplateSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flow-templates/{slug}": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "get_flow_template",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Template slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowTemplate"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "get_flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The saved flow (metalcraft-flows SavedFlow)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "put_flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "delete_flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}/run": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "post_run_flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunFlowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunFlowResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/activity": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Recent gateway activity across all channels, including inbound messages that\nmatched no channel (the global Network view). Newest first.",
+        "operationId": "list_gateway_activity",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayEvent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/channels": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List all configured gateway channel instances.",
+        "operationId": "list_gateway_channels",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelInstance"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "operationId": "post_create_gateway_channel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGatewayChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelInstance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/channels/{id}": {
+      "put": {
+        "tags": [
+          "gateway"
+        ],
+        "operationId": "put_gateway_channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Channel id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGatewayChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "gateway"
+        ],
+        "operationId": "delete_gateway_channel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Channel id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/channels/{id}/enabled": {
+      "put": {
+        "tags": [
+          "gateway"
+        ],
+        "operationId": "put_gateway_channel_enabled",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Channel id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/channels/{id}/events": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Recent inbound/outbound activity for a single channel (newest first).",
+        "operationId": "list_gateway_channel_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Channel id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayEvent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/metalcraft/connect": {
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Connect: fetch config + wire the webhook + enable the channel. 409 until verified.",
+        "operationId": "gateway_metalcraft_connect",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MgConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Connected"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/metalcraft/disconnect": {
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Disconnect: disable the metalcraft-gateway channel + drop its secrets. Idempotent.",
+        "operationId": "gateway_metalcraft_disconnect",
+        "responses": {
+          "200": {
+            "description": "Disconnected"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/metalcraft/register": {
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Inline register: proxy to the gateway with the pod's token; returns `verify_code`.",
+        "operationId": "gateway_metalcraft_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MgRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registered"
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/metalcraft/status": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Registration/verification/connection state for the workshop's Connect panel.",
+        "operationId": "gateway_metalcraft_status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gateway/types": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List the installed gateway channel types (with their per-instance settings\nschema), so the workshop can render a \"new channel\" form.",
+        "operationId": "list_gateway_types",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelType"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/info": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent identity/version + config the Workshop reads. `version` drives the\nSettings tab's \"which build is live\" check; `default_persona` is the persona\nthe Workshop's New Chat modal defaults to (set `METALCRAFT_DEFAULT_PERSONA`\nto override; falls back to the orchestrator, which delegates to specialists).",
+        "operationId": "agent_info",
+        "responses": {
+          "200": {
+            "description": "Agent name, version, and default persona"
+          }
+        }
+      }
+    },
+    "/api/v1/integration-packs": {
+      "get": {
+        "tags": [
+          "integration-packs"
+        ],
+        "operationId": "list_integration_packs",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationPackSummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integration-packs/{id}": {
+      "get": {
+        "tags": [
+          "integration-packs"
+        ],
+        "operationId": "get_integration_pack",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Pack id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationPackDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integration-packs/{id}/enabled": {
+      "put": {
+        "tags": [
+          "integration-packs"
+        ],
+        "operationId": "put_pack_enabled",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Pack id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      }
+    },
+    "/api/v1/keys": {
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "operationId": "list_keys",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KeyEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/recommended": {
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Keys recommended by enabled packs, each flagged configured/missing. Lets the\nkey store UI surface \"these enabled packs need these keys\" without the user\nhaving to read each pack's manifest.",
+        "operationId": "list_recommended_keys",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecommendedKey"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{name}": {
+      "put": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Upsert a key. The name comes from the path; the raw value (and an optional\ntarget `channel_id`) from the body. Managed keys — a platform-injected global\n(env-authoritative) or a provisioner-backed channel's secrets — are read-only\nand rejected here.",
+        "operationId": "put_key",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Key name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyValueBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Delete a key. An optional `?channel_id=` targets a channel's secret scope;\nomitted means the global scope. Managed keys are read-only and rejected.",
+        "operationId": "delete_key",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Key name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "description": "Channel scope for a channel secret",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/keys/{name}/reveal": {
+      "get": {
+        "tags": [
+          "keys"
+        ],
+        "summary": "Reveal a stored key's **raw** value. An optional `?channel_id=` targets a\nchannel's secret scope; omitted means global. This is the one endpoint that\nreturns an unmasked value — an explicit, user-initiated action in the Keys UI.\nOnly returns values physically present in the store (a derived/env-only value\nlike a provisioner's `API_KEY` is not stored, so there's nothing to reveal).",
+        "operationId": "reveal_key",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Key name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel_id",
+            "in": "query",
+            "description": "Channel scope for a channel secret",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyRevealResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/personas/{slug}": {
+      "get": {
+        "tags": [
+          "personas"
+        ],
+        "operationId": "get_persona",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Persona slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Persona"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "personas"
+        ],
+        "operationId": "put_persona",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Persona slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Persona"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "personas"
+        ],
+        "operationId": "delete_persona",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Persona slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/scheduled-tasks": {
+      "get": {
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "List scheduled follow-ups (pending + recently completed), newest first.",
+        "operationId": "list_scheduled_tasks",
+        "responses": {
+          "200": {
+            "description": "Scheduled follow-ups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scheduled-tasks/{id}": {
+      "delete": {
+        "tags": [
+          "scheduled-tasks"
+        ],
+        "summary": "Cancel a pending scheduled follow-up.",
+        "operationId": "delete_scheduled_task",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/skills/{slug}": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "operationId": "get_skill",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Skill slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "skills"
+        ],
+        "operationId": "put_skill",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Skill slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skill"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "operationId": "delete_skill",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Skill slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/snapshot": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "operationId": "get_snapshot",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiToolSummary": {
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ChannelInstance": {
+        "type": "object",
+        "description": "A user-created configuration of a [`ChannelType`].",
+        "required": [
+          "id",
+          "type_id",
+          "name"
+        ],
+        "properties": {
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "type_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelType": {
+        "type": "object",
+        "description": "Manifest for a channel type — what `channel_type.json` contains.",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "adapter"
+        ],
+        "properties": {
+          "adapter": {
+            "type": "string",
+            "description": "Native protocol adapter that handles inbound parsing + outbound sending\nfor this type (e.g. `\"twilio\"`). Selects code, not config."
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provisioner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When set, this type is provisioned by a named \"connect\" flow rather than a\nmanual settings form — the workshop renders that provider's Connect panel\n(e.g. `\"metalcraft-gateway\"` auto-syncs config from the gateway)."
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "API keys this type recommends — surfaced in the key-store UI once any\ninstance of the type is enabled."
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "description": "Per-instance configuration fields the workshop renders into a form."
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "persona_slug",
+          "model_name",
+          "created_at",
+          "messages"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageWire"
+            }
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "persona_slug": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Marks the start of a turn — emitted once at the top of `post_chat_turn`\nso the workshop can open a new group in the transcript.",
+            "required": [
+              "turn_index",
+              "user_message",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "turn_started"
+                ]
+              },
+              "session_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Diagnostics session directory name for this chat, so the workshop can\ndeep-link a turn (or a turn error) to its session logs. `None` for a\nchat with no active logger — e.g. one reloaded after an agent restart."
+              },
+              "turn_index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "user_message": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "LLM call has started. Paired with a later `LlmCompleted`.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "llm_started"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "LLM call finished. `messages` is any new assistant message(s); tool\ncalls produced by this LLM step are emitted as separate `ToolStarted`\nevents immediately after.",
+            "required": [
+              "messages",
+              "duration_ms",
+              "kind"
+            ],
+            "properties": {
+              "duration_ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "llm_completed"
+                ]
+              },
+              "messages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatMessageWire"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A tool the LLM requested is about to run.",
+            "required": [
+              "tool_call_id",
+              "name",
+              "args",
+              "kind"
+            ],
+            "properties": {
+              "args": {},
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_started"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "tool_call_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The tool finished. `result` is the `ToolResult` message that was\nappended to state.",
+            "required": [
+              "tool_call_id",
+              "name",
+              "duration_ms",
+              "result",
+              "kind"
+            ],
+            "properties": {
+              "duration_ms": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tool_completed"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "result": {
+                "$ref": "#/components/schemas/ChatMessageWire"
+              },
+              "tool_call_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The agent's user-facing reply, produced by a `say_to_user` tool call.\nIn tool-only mode this — not free-text `LlmCompleted` content — is the\nassistant's message; the workshop renders it as the reply bubble. The\nunderlying `say_to_user` tool start/finish events are suppressed so the\nreply isn't also shown as a raw tool card.",
+            "required": [
+              "content",
+              "kind"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "reply"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Terminal event. `status` is \"completed\" | \"interrupted\" | \"failed\".",
+            "required": [
+              "status",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A classified turn failure, safe to show the user. Emitted instead of a\nbare `Done{status:\"failed\"}` so frontends can render a friendly message\n(and branch on `code`) rather than the raw provider-error chain. `code`\nis the machine-readable identifier (see `runtime::ErrorCode`); `message`\nis the user-facing text; `retryable` hints whether \"try again\" is useful.\nA `done` still follows so lifecycle handling is unchanged for old clients.",
+            "required": [
+              "code",
+              "message",
+              "retryable",
+              "kind"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          }
+        ],
+        "description": "SSE event wire format. One JSON object per event. The `kind` field\ndiscriminates; payloads vary by kind. Events form a lifecycle:\n  `turn_started` → (`llm_started` → `llm_completed`\n                  → `tool_started`* → `tool_completed`*)+\n                  → `done`\n(`tool_started` and `tool_completed` can repeat per LLM step.)"
+      },
+      "ChatMessageWire": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "role"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "role"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "assistant"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A reasoning item preserved so it can be replayed with its tool call on a\nlater turn (Responses API requirement for reasoning models). Persisted so\nthe pairing survives a reload — dropping it would re-trigger the \"function\ncall without required reasoning item\" 400 on resume.",
+            "required": [
+              "id",
+              "encrypted",
+              "role"
+            ],
+            "properties": {
+              "encrypted": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "reasoning"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "args",
+              "role"
+            ],
+            "properties": {
+              "args": {},
+              "call_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "result",
+              "role"
+            ],
+            "properties": {
+              "call_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "tool_result"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Wire form for `metalcraft::AgentMessage` — the in-memory enum isn't\n`Serialize`, so we convert before responding. Also used as the on-disk\nformat for persisted chats, so it derives `Deserialize` too."
+      },
+      "ChatSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "persona_slug",
+          "model_name",
+          "created_at",
+          "turn_count"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "persona_slug": {
+            "type": "string"
+          },
+          "turn_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ChatTurnRequest": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateChatRequest": {
+        "type": "object",
+        "required": [
+          "persona_slug"
+        ],
+        "properties": {
+          "model_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona_slug": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateGatewayChannelRequest": {
+        "type": "object",
+        "required": [
+          "type_id",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "type_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DiagnosticsSession": {
+        "type": "object",
+        "description": "A fully reconstructed session: its `session_info.json` plus an ordered\ntimeline of every other JSON event file in the directory.",
+        "required": [
+          "id",
+          "timeline"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "session_info": {},
+          "timeline": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            }
+          }
+        }
+      },
+      "DiagnosticsSessionSummary": {
+        "type": "object",
+        "description": "One session in the listing (metadata + turn count, no per-turn payloads).",
+        "required": [
+          "id",
+          "timestamp",
+          "turn_count"
+        ],
+        "properties": {
+          "flow_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present (and `kind == \"flow\"`) when produced by a flow run."
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "\"session\" for a normal run, \"flow\" for a flow run."
+          },
+          "model_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona_slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "turn_count": {
+            "type": "integer",
+            "description": "Count of `turn_NNN.json` files — how far the run actually got.",
+            "minimum": 0
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "FlowPromptResult": {
+        "type": "object",
+        "description": "Result of running one prompt node of a flow.",
+        "required": [
+          "prompt_index",
+          "status"
+        ],
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "\"completed\" | \"interrupted\" | \"failed\"."
+          }
+        }
+      },
+      "FlowTemplate": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "flow"
+        ],
+        "properties": {
+          "flow": {
+            "description": "The raw template flow JSON, ready to be cloned and edited as a new flow."
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "FlowTemplateSummary": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "GatewayEvent": {
+        "type": "object",
+        "description": "One inbound or outbound gateway event.\n\n`channel_id` is `None` when an inbound message matched no enabled channel —\nthese \"unrouted\" records are what make the global Network view useful for\ndiagnosing misconfiguration (e.g. a wrong `integration_id`).",
+        "required": [
+          "ts",
+          "direction",
+          "platform",
+          "outcome"
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Message body (truncated to [`MAX_BODY_CHARS`])."
+          },
+          "channel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The matched gateway channel's id, or `None` if unrouted."
+          },
+          "channel_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The matched gateway channel's name, for display."
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Extra context — persona used, error message, etc."
+          },
+          "direction": {
+            "type": "string",
+            "description": "`\"inbound\"` or `\"outbound\"`."
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Sender identifier (phone number for WhatsApp)."
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable sender name, when known."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Outcome: `routed`, `no_matching_channel`, `signature_rejected`,\n`sent`, `send_failed`."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Channel type / platform, e.g. `\"pipestreamr\"` or `\"twilio\"`."
+          },
+          "source_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upstream integration UUID (PipeStreamr `source_id`), when known."
+          },
+          "to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Recipient identifier."
+          },
+          "ts": {
+            "type": "string",
+            "description": "RFC3339 timestamp; filled in by [`record`] if left empty."
+          }
+        }
+      },
+      "GatewayStatus": {
+        "type": "object",
+        "description": "What the workshop Connect panel renders from.",
+        "required": [
+          "configured",
+          "registered",
+          "verified",
+          "connected",
+          "streaming",
+          "has_public_url",
+          "webhook_stale"
+        ],
+        "properties": {
+          "active_number": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "The pod has a token (is linked to a Metalcraft ID account)."
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "A local `metalcraft-gateway` channel is enabled and the webhook secret is set."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_public_url": {
+            "type": "boolean",
+            "description": "Whether the pod knows its own public URL (POD_PUBLIC_URL) for the webhook."
+          },
+          "registered": {
+            "type": "boolean",
+            "description": "The user has registered a personal number on the gateway."
+          },
+          "streaming": {
+            "type": "boolean",
+            "description": "The Inbound Pull long-poll is currently connected and draining. Unlike `connected`\n(config present on disk), this is *intrinsic* liveness — it cannot be true while\ninbound delivery is actually dead. `false` in push mode (no long-poll runs)."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "That number is verified — required before connecting."
+          },
+          "webhook_stale": {
+            "type": "boolean",
+            "description": "The gateway's registered inbound webhook (`consumer_webhook_url`) no longer\npoints at this pod's current URL, so inbound messages are being delivered into\nthe void. `connected` can be true while this is true — the \"green light, dead\npipe\" state. Detecting it kicks off a reactive re-register (see `status`)."
+          }
+        }
+      },
+      "HttpApiToolConfig": {
+        "type": "object",
+        "description": "JSON config schema for a user-defined HTTP API tool.",
+        "required": [
+          "name",
+          "description",
+          "method",
+          "url",
+          "parameters"
+        ],
+        "properties": {
+          "body_defaults": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "body_mapping": {
+            "type": "string"
+          },
+          "body_template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "method": {
+            "type": "string"
+          },
+          "multipart": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MultipartConfig",
+                "description": "Present only when `body_mapping == \"multipart\"`: describes which argument\ncarries the local file path and what form-field name to send it under."
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "param_paths": {
+            "type": "object",
+            "description": "Present only when `body_mapping == \"params_nested\"`: maps each flat\nargument name to a dotted JSON path in the request body (e.g.\n`\"prompt\": \"payload.structured_data.params.prompt\"`). Lets a tool expose\nsimple scalar parameters (which OpenAI's function-schema validation\naccepts) while still producing a deeply nested JSON body — without the\nstring-substitution hazards of `body_mapping == \"template\"`. Arguments\nwith no entry here are inserted at the top level under their own name.\nAbsent (optional) arguments are simply skipped, and `body_defaults`\nprovides the nested base the paths are written onto.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "parameters": {},
+          "poll": {
+            "type": "boolean",
+            "description": "Marks this tool as a status **poll** (e.g. checking an async job until it\nfinishes). Polling means calling the same tool with the same arguments\nrepeatedly on purpose, which would otherwise look like a runaway loop, so\nthe step guard exempts poll tools from tight loop detection. See\n[`crate::guard`]."
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "IntegrationPackDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "enabled",
+          "personas",
+          "skills",
+          "api_tools",
+          "flow_templates"
+        ],
+        "properties": {
+          "api_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "flow_templates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "IntegrationPackSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "version",
+          "enabled",
+          "personas",
+          "skills",
+          "api_tools",
+          "flow_templates"
+        ],
+        "properties": {
+          "api_tools": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "flow_templates": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "personas": {
+            "type": "integer",
+            "description": "Number of personas/skills/api_tools/flow_templates the pack provides.",
+            "minimum": 0
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "KeyEntry": {
+        "type": "object",
+        "description": "A stored key with its **scope** and whether it is managed (platform- or\nconnection-owned → read-only in the UI). Returned by `GET /api/v1/keys` so\nthe Keys page can group global keys and per-channel secrets, and lock the\nmanaged ones. `channel_id`/`channel_name` are present only for channel scope.",
+        "required": [
+          "name",
+          "masked",
+          "scope",
+          "managed"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "masked": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "`\"global\"` or `\"channel\"`."
+          }
+        }
+      },
+      "KeyRevealResponse": {
+        "type": "object",
+        "description": "The raw value of a key, returned only by the explicit reveal endpoint.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "KeyScopeQuery": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When set, target this channel's secret scope instead of global."
+          }
+        }
+      },
+      "KeySummary": {
+        "type": "object",
+        "description": "A stored API key, exposed to the workshop with its value masked — the\nraw secret is never sent over the wire. Used by the load-time snapshot and\nthe sidebar (global scope only).",
+        "required": [
+          "name",
+          "masked"
+        ],
+        "properties": {
+          "masked": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "KeyValueBody": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When set, the key is written to this channel's secret scope instead of\nthe global namespace."
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "MgConnectRequest": {
+        "type": "object",
+        "properties": {
+          "connection_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Audience-scoped connection token from the k3 broker, adopted as the\nchannel's outbound API key. Omitted on the Workshop path."
+          },
+          "webhook_base": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Override for the pod's public URL when `POD_PUBLIC_URL` isn't injected."
+          }
+        }
+      },
+      "MgRegisterRequest": {
+        "type": "object",
+        "required": [
+          "phone_number"
+        ],
+        "properties": {
+          "phone_number": {
+            "type": "string"
+          }
+        }
+      },
+      "MultipartConfig": {
+        "type": "object",
+        "description": "Config for a `multipart/form-data` upload tool. The argument named by\n`file_param` is treated as a local file path (constrained to the upload\nroot) and sent as the file part `file_field`; all other arguments become\ntext fields.",
+        "required": [
+          "file_param",
+          "file_field"
+        ],
+        "properties": {
+          "file_field": {
+            "type": "string",
+            "description": "Multipart field name the server expects the file under (e.g. `\"file\"`)."
+          },
+          "file_param": {
+            "type": "string",
+            "description": "Incoming argument that holds the local file path to upload."
+          }
+        }
+      },
+      "Persona": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "tools",
+          "system_prompt"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Integration packs this persona is scoped to (by pack id, e.g. \"linear\").\nEvery HTTP-API tool provided by an enabled pack listed here is added to\nthe persona's tool set, so a persona can adopt a whole integration\nwithout enumerating each `<pack>_*` tool by name. Combine with `tools`\nfor native tools like `load_skill`. See [`Persona::resolved_tool_names`]."
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "system_prompt": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional semantic version (e.g. \"1.1.0\") for built-in/seed personas.\nDrives force-upgrade on startup: when a bundled seed persona's version\nis higher than the installed copy's (a missing version counts as 0),\nthe installed file is overwritten. User-created personas omit this and\nare never force-upgraded. See `seed::write_versioned_seeds`."
+          }
+        }
+      },
+      "PersonaSummary": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when this persona is provided by an enabled integration pack.\nLocal (user-owned) personas omit this."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "True for pack-provided personas — the workshop disables Save/Delete."
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectLayout": {
+        "type": "object",
+        "required": [
+          "data_dir",
+          "personas_dir",
+          "skills_dir",
+          "flows_dir",
+          "sessions_dir",
+          "api_tools_dir"
+        ],
+        "properties": {
+          "api_tools_dir": {
+            "type": "string"
+          },
+          "data_dir": {
+            "type": "string"
+          },
+          "flows_dir": {
+            "type": "string"
+          },
+          "personas_dir": {
+            "type": "string"
+          },
+          "sessions_dir": {
+            "type": "string"
+          },
+          "skills_dir": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectSnapshot": {
+        "type": "object",
+        "required": [
+          "personas",
+          "skills",
+          "flows",
+          "sessions",
+          "api_tools",
+          "keys",
+          "layout"
+        ],
+        "properties": {
+          "api_tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiToolSummary"
+            }
+          },
+          "flows": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "From the external `metalcraft-flows` crate, which has no `ToSchema`; the\nweb app doesn't consume this field, so expose it as an opaque object array."
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KeySummary"
+            }
+          },
+          "layout": {
+            "$ref": "#/components/schemas/ProjectLayout"
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonaSummary"
+            }
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticsSessionSummary"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillSummary"
+            }
+          }
+        }
+      },
+      "RecommendedKey": {
+        "type": "object",
+        "description": "A key recommended by one or more *enabled* integration packs (from their\n`requires_env`), with whether it currently resolves (key store or env) and\nwhich packs declare it. Drives the \"keys these packs still need\" list in\nthe key store UI — `configured: false` is the hint to add it.",
+        "required": [
+          "name",
+          "configured",
+          "packs",
+          "managed"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "Platform-managed (env-authoritative, e.g. `METALCRAFT_TOKEN` injected into a\nprovisioned pod). The UI should show it as provided/read-only rather than\nprompting the user to paste a value."
+          },
+          "name": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ResumeFlowRunRequest": {
+        "type": "object",
+        "required": [
+          "handle"
+        ],
+        "properties": {
+          "data": {
+            "description": "Optional value to set as the resumed node's `_last` input."
+          },
+          "handle": {
+            "type": "string",
+            "description": "Handle to take (an approval decision, or `\"after\"` for a wait)."
+          }
+        }
+      },
+      "RunFlowRequest": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "description": "Values for the flow's declared entry `inputs`. Object of `{ name: value }`;\nmissing inputs fall back to their declared defaults. Ignored by v1 flows."
+          },
+          "model_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Persona to run the flow's prompts as. Defaults to `coding-agent` if\nthe caller doesn't specify one."
+          }
+        }
+      },
+      "RunFlowResponse": {
+        "type": "object",
+        "required": [
+          "flow_id",
+          "prompts"
+        ],
+        "properties": {
+          "flow_id": {
+            "type": "string"
+          },
+          "prompts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowPromptResult"
+            }
+          }
+        }
+      },
+      "SetEnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SettingField": {
+        "type": "object",
+        "description": "One configurable field in a channel type's per-instance settings schema.\n`input_type` is a hint for the workshop form (`text`, `tel`, `password`,\n`number`, `persona`, `model`).",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "help": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input_type": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "placeholder": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean",
+            "description": "When true this field is a **secret**: its value is persisted to the\nchannel's secret scope in the key store (`field.key` is the secret name),\nnever to the instance's plaintext `settings`. The workshop renders it as a\nmasked, write-only input under the channel's secrets — the raw value never\nflows back out. Adapters read it via `key_store::lookup_scoped`."
+          }
+        }
+      },
+      "Skill": {
+        "type": "object",
+        "description": "A full skill (frontmatter description + body).",
+        "required": [
+          "slug",
+          "description",
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "SkillSummary": {
+        "type": "object",
+        "description": "Summary of a skill for listings (no body).",
+        "required": [
+          "slug",
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when this skill is provided by an enabled integration pack."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "True for pack-provided skills — the workshop disables Save/Delete."
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "TimelineEvent": {
+        "type": "object",
+        "required": [
+          "kind",
+          "file",
+          "data"
+        ],
+        "properties": {
+          "data": {},
+          "file": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateGatewayChannelRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "token"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "agent",
+      "description": "Agent identity + project snapshot"
+    },
+    {
+      "name": "personas",
+      "description": "Persona definitions"
+    },
+    {
+      "name": "skills",
+      "description": "Skill definitions"
+    },
+    {
+      "name": "flows",
+      "description": "Flows, flow runs, and flow templates"
+    },
+    {
+      "name": "diagnostics",
+      "description": "Diagnostics session browsing"
+    },
+    {
+      "name": "api-tools",
+      "description": "HTTP-API tool configs"
+    },
+    {
+      "name": "keys",
+      "description": "The agent key/secret store"
+    },
+    {
+      "name": "chats",
+      "description": "Interactive chat sessions"
+    },
+    {
+      "name": "scheduled-tasks",
+      "description": "Scheduled follow-ups"
+    },
+    {
+      "name": "integration-packs",
+      "description": "Installable integration packs"
+    },
+    {
+      "name": "gateway",
+      "description": "Messaging gateway channels + Metalcraft connect"
+    }
+  ]
+}

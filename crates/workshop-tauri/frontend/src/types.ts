@@ -1,41 +1,26 @@
-// Mirrors the wire types produced by workshop-api. Keep in sync.
+// Pod-surface DTOs are GENERATED from the agent's published OpenAPI document
+// (`src/api-types.ts`, produced by `npm run gen:types` from `openapi.json`), so
+// the shapes that are a straight pass-through of the pod's `/api/v1` response
+// can't drift from what the pod serializes. Types that the Tauri Rust command
+// layer *reshapes* (ProjectSnapshot/ProjectLayout/FlowSummary/ApiToolConfig,
+// the v2 flow-run shapes, the chat message unions, …) stay hand-written below,
+// since their contract is the Rust command, not the pod schema.
+//
+// Regenerate after the agent's API changes: in metalcraft-agent run
+// `cargo run --example dump_openapi > openapi.json`, copy it here, `gen:types`.
+import type { components } from "./api-types";
+
+type S = components["schemas"];
 
 export type ConnectionMode = "local" | "remote";
 
-export interface PersonaSummary {
-  slug: string;
-  name: string;
-  description: string;
-  pack_id?: string | null;
-  read_only?: boolean;
-}
+export type PersonaSummary = S["PersonaSummary"];
 
-export interface Persona {
-  name: string;
-  description: string;
-  tools: string[];
-  // Not edited by the workshop form, but carried through so save() doesn't
-  // drop them (packs = pack-scoped tools; version = agent force-upgrade tag).
-  packs?: string[];
-  skills: string[];
-  version?: string | null;
-  system_prompt: string;
-}
+export type Persona = S["Persona"];
 
-export interface SkillSummary {
-  slug: string;
-  description: string;
-  pack_id?: string | null;
-  read_only?: boolean;
-}
+export type SkillSummary = S["SkillSummary"];
 
-export interface Skill {
-  slug: string;
-  description: string;
-  body: string;
-  pack_id?: string | null;
-  read_only?: boolean;
-}
+export type Skill = S["Skill"];
 
 export interface FlowSummary {
   id: string;
@@ -129,12 +114,7 @@ export interface ProjectLayout {
   has_api_tools: boolean;
 }
 
-export interface ApiToolSummary {
-  name: string;
-  description: string;
-  pack_id?: string | null;
-  read_only?: boolean;
-}
+export type ApiToolSummary = S["ApiToolSummary"];
 
 export interface ApiToolConfig {
   name: string;
@@ -150,23 +130,13 @@ export interface ApiToolConfig {
 
 /// A stored API key/secret. The raw value is never sent to the UI — only a
 /// masked preview (e.g. `sb_l…a9b2`).
-export interface KeySummary {
-  name: string;
-  masked: string;
-}
+export type KeySummary = S["KeySummary"];
 
 /// A stored key with its scope, returned by the `list_keys` command. `global`
 /// keys are account-wide; `channel` keys are secrets owned by one gateway
 /// channel (with `channel_id`/`channel_name` set). `managed` keys are written by
 /// a connection/the platform and are read-only in the UI.
-export interface KeyEntry {
-  name: string;
-  masked: string;
-  scope: "global" | "channel";
-  channel_id?: string | null;
-  channel_name?: string | null;
-  managed: boolean;
-}
+export type KeyEntry = S["KeyEntry"];
 
 /// A key an enabled integration pack declares it needs (`requires_env`), with
 /// whether it's already configured and which packs want it. Remote-only.
@@ -275,11 +245,7 @@ export interface MetalcraftPod {
 
 // ── Flow templates / Run flow / Chat ───────────────────────────────────────
 
-export interface FlowTemplateSummary {
-  slug: string;
-  name: string;
-  pack_id?: string | null;
-}
+export type FlowTemplateSummary = S["FlowTemplateSummary"];
 
 export interface FlowTemplate {
   slug: string;
@@ -290,85 +256,20 @@ export interface FlowTemplate {
 
 // ── Integration packs ──────────────────────────────────────────────────────
 
-export interface PackSummary {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  enabled: boolean;
-  personas: number;
-  skills: number;
-  api_tools: number;
-  flow_templates: number;
-  requires_env: string[];
-}
+export type PackSummary = S["IntegrationPackSummary"];
 
-export interface PackDetail {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  enabled: boolean;
-  requires_env: string[];
-  personas: string[];
-  skills: string[];
-  api_tools: string[];
-  flow_templates: string[];
-}
+export type PackDetail = S["IntegrationPackDetail"];
 
 // ── Gateway channels ───────────────────────────────────────────────────────
 
-export interface GatewaySettingField {
-  key: string;
-  label: string;
-  input_type: string; // "text" | "tel" | "password" | "number" | "persona" | "model"
-  required: boolean;
-  /** When true the value is a channel-scoped secret: saved to the key store
-   *  under this channel (via `save_key` with `channelId`), never into the
-   *  instance's plaintext settings. Rendered masked/write-only. */
-  secret?: boolean;
-  placeholder?: string | null;
-  help?: string | null;
-}
+export type GatewaySettingField = S["SettingField"];
 
-export interface GatewayType {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  adapter: string;
-  requires_env: string[];
-  settings: GatewaySettingField[];
-  /** When set, the workshop renders that provider's Connect panel instead of a
-   * manual settings form (e.g. "metalcraft-gateway" auto-syncs its config). */
-  provisioner?: string | null;
-}
+export type GatewayType = S["ChannelType"];
 
 /** Registration/verification/connection state for the Metalcraft Gateway Connect panel. */
-export interface MetalcraftGatewayStatus {
-  configured: boolean;
-  registered: boolean;
-  verified: boolean;
-  connected: boolean;
-  /** Inbound Pull long-poll is live and draining — intrinsic "receiving now" liveness. */
-  streaming?: boolean;
-  /** Push-mode drift: the gateway's stored webhook no longer points at this pod (the
-   *  old "green light, dead pipe" state). Self-heals; surfaced as "reconnecting". */
-  webhook_stale?: boolean;
-  active_number?: string | null;
-  channel?: string | null;
-  has_public_url: boolean;
-  error?: string | null;
-}
+export type MetalcraftGatewayStatus = S["GatewayStatus"];
 
-export interface GatewayChannel {
-  id: string;
-  type_id: string;
-  name: string;
-  enabled: boolean;
-  settings: Record<string, string>;
-  created_at?: string | null;
-}
+export type GatewayChannel = S["ChannelInstance"];
 
 export type GatewayDirection = "inbound" | "outbound";
 
@@ -381,20 +282,7 @@ export type GatewayOutcome =
   | "send_failed"
   | string;
 
-export interface GatewayEvent {
-  ts: string;
-  direction: GatewayDirection;
-  platform: string;
-  from?: string | null;
-  from_name?: string | null;
-  to?: string | null;
-  body: string;
-  source_id?: string | null;
-  channel_id?: string | null;
-  channel_name?: string | null;
-  outcome: GatewayOutcome;
-  detail?: string | null;
-}
+export type GatewayEvent = S["GatewayEvent"];
 
 export interface RunFlowPromptResult {
   prompt_index: number;
@@ -442,13 +330,7 @@ export interface FlowRun {
   updated_at: string;
 }
 
-export interface ChatSummary {
-  id: string;
-  persona_slug: string;
-  model_name: string;
-  created_at: string;
-  turn_count: number;
-}
+export type ChatSummary = S["ChatSummary"];
 
 export type ChatWireMessage =
   | { role: "user"; content: string }

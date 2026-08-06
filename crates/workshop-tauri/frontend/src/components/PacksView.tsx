@@ -104,9 +104,9 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
                     {p.personas} personas · {p.skills} skills · {p.api_tools} tools
                     · {p.flow_templates} templates
                   </p>
-                  {p.requires_env.length > 0 && (
+                  {(p.requires_env?.length ?? 0) > 0 && (
                     <p className="text-[10px] text-amber-400 mt-1">
-                      Requires env: {p.requires_env.join(", ")}
+                      Requires env: {p.requires_env?.join(", ")}
                     </p>
                   )}
                 </div>
@@ -204,9 +204,9 @@ function PackDetailPanel({
           </div>
           <p className="text-sm text-gray-400 mt-1">{detail.description}</p>
           <p className="text-xs text-gray-500 mt-1 font-mono">id: {detail.id}</p>
-          {detail.requires_env.length > 0 && (
+          {(detail.requires_env?.length ?? 0) > 0 && (
             <p className="text-xs text-amber-400 mt-1">
-              Requires env: {detail.requires_env.join(", ")}
+              Requires env: {detail.requires_env?.join(", ")}
             </p>
           )}
         </header>
