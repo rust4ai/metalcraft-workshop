@@ -139,12 +139,9 @@ export type KeySummary = S["KeySummary"];
 export type KeyEntry = S["KeyEntry"];
 
 /// A key an enabled integration pack declares it needs (`requires_env`), with
-/// whether it's already configured and which packs want it. Remote-only.
-export interface RecommendedKey {
-  name: string;
-  configured: boolean;
-  packs: string[];
-}
+/// whether it's already configured, which packs want it, and whether it's
+/// platform-managed. Remote-only.
+export type RecommendedKey = S["RecommendedKey"];
 
 /// Returned by the `agent_info` Tauri command (from the agent's `/api/v1/info`).
 export interface AgentInfo {

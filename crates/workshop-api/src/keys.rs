@@ -44,6 +44,12 @@ pub struct RecommendedKey {
     pub name: String,
     pub configured: bool,
     pub packs: Vec<String>,
+    /// Platform-managed (env-authoritative, e.g. a token injected into a
+    /// provisioned pod): shown as provided/read-only rather than prompting for a
+    /// value. The agent sends this on `GET /api/v1/keys/recommended`; this struct
+    /// used to drop it. `#[serde(default)]` keeps local mode (empty list) working.
+    #[serde(default)]
+    pub managed: bool,
 }
 
 const CURRENT_VERSION: u32 = 2;

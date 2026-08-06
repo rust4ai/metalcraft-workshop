@@ -356,7 +356,14 @@ function RecommendedKeys({
               ))}
             </div>
             <div className="flex-1" />
-            {r.configured ? (
+            {r.managed ? (
+              <span
+                className="text-xs text-gray-400 whitespace-nowrap"
+                title="Provided by the platform (env-authoritative) — nothing to enter"
+              >
+                🔒 provided
+              </span>
+            ) : r.configured ? (
               <button
                 onClick={() => onSelect(r.name)}
                 className="text-xs text-green-400 hover:underline whitespace-nowrap"
