@@ -173,6 +173,32 @@ pub trait ProjectConnection: Send + Sync {
     async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>>;
     async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail>;
     async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
+    /// Install a pack from the registry, optionally pinning a version and/or a
+    /// content hash. Returns the installed [`PackSummary`] (enabled + pinned).
+    async fn install_pack(
+        &self,
+        slug: &str,
+        version: Option<&str>,
+        content_sha256: Option<&str>,
+    ) -> anyhow::Result<PackSummary>;
+    /// Uninstall a pack. Returns `UninstallPackResult` (`dependent_flows` /
+    /// `dependent_personas` that still reference it) as raw JSON.
+    async fn uninstall_pack(&self, id: &str) -> anyhow::Result<serde_json::Value>;
+
+    // Flow install-from-registry + dependency install — remote-only.
+    /// Install a flow from the registry by slug. Returns `InstallResult`
+    /// (`{ flow, dependencies }`) as raw JSON.
+    async fn install_flow(&self, slug: &str) -> anyhow::Result<serde_json::Value>;
+    /// Install the packs a flow's `requires` block declares. Returns
+    /// `{ flow, packs: [PackInstallOutcome] }` as raw JSON.
+    async fn install_flow_dependencies(&self, id: &str) -> anyhow::Result<serde_json::Value>;
+
+    // Lockfile (reproducible rebuild) — remote-only.
+    /// Fetch the agent's `metalcraft.lock` (pinned packs + flows) as raw JSON.
+    async fn get_lockfile(&self) -> anyhow::Result<serde_json::Value>;
+    /// Reinstall every pinned pack then flow at its locked version. Returns
+    /// `{ outcomes: [RestoreOutcome] }` as raw JSON.
+    async fn restore_lockfile(&self) -> anyhow::Result<serde_json::Value>;
 
     // Gateway channels — remote-only, like integration packs. Types are
     // declarative manifests on the agent; instances live in the agent's
@@ -378,6 +404,29 @@ impl ProjectConnection for LocalConnection {
     }
     async fn set_pack_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
         Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+    async fn install_pack(
+        &self,
+        _slug: &str,
+        _version: Option<&str>,
+        _content_sha256: Option<&str>,
+    ) -> anyhow::Result<PackSummary> {
+        Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+    async fn uninstall_pack(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Integration packs"))
+    }
+    async fn install_flow(&self, _slug: &str) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Install flow"))
+    }
+    async fn install_flow_dependencies(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Install flow dependencies"))
+    }
+    async fn get_lockfile(&self) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Lockfile"))
+    }
+    async fn restore_lockfile(&self) -> anyhow::Result<serde_json::Value> {
+        Err(chat::not_supported_in_local_mode("Lockfile"))
     }
 
     async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {
@@ -988,6 +1037,29 @@ impl ProjectConnection for RemoteConnection {
         Ok(resp.json().await?)
     }
 
+    async fn install_flow(&self, slug: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.post("/api/v1/flows/install")
+                .json(&serde_json::json!({ "slug": slug }))
+                .send()
+                .await?,
+            "POST install flow",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
+    async fn install_flow_dependencies(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.post(&format!("/api/v1/flows/{id}/install-dependencies"))
+                .send()
+                .await?,
+            "POST install flow dependencies",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
         let resp = ok_or_err(self.get("/api/v1/chats").send().await?, "GET chats").await?;
         Ok(resp.json().await?)
@@ -1129,6 +1201,50 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         Ok(())
+    }
+    async fn install_pack(
+        &self,
+        slug: &str,
+        version: Option<&str>,
+        content_sha256: Option<&str>,
+    ) -> anyhow::Result<PackSummary> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            slug: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            version: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            content_sha256: Option<&'a str>,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/integration-packs/install")
+                .json(&Body { slug, version, content_sha256 })
+                .send()
+                .await?,
+            "POST install pack",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn uninstall_pack(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.delete(&format!("/api/v1/integration-packs/{id}")).send().await?,
+            "DELETE integration-pack",
+        )
+        .await?;
+        Ok(resp.json().await?)
+    }
+    async fn get_lockfile(&self) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(self.get("/api/v1/lockfile").send().await?, "GET lockfile").await?;
+        Ok(resp.json().await?)
+    }
+    async fn restore_lockfile(&self) -> anyhow::Result<serde_json::Value> {
+        let resp = ok_or_err(
+            self.post("/api/v1/lockfile/restore").send().await?,
+            "POST lockfile restore",
+        )
+        .await?;
+        Ok(resp.json().await?)
     }
 
     async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {

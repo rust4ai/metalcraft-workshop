@@ -30,6 +30,8 @@ import type {
   RunFlowResult,
   FlowRun,
   DiagnosticsSessionSummary,
+  Requires,
+  InstallFlowDependenciesResult,
 } from "../types";
 
 // Every node type renders through one data-driven component (it picks the right
@@ -85,6 +87,9 @@ interface FlowInputSpec {
   default?: unknown;
 }
 type FlowInputs = Record<string, FlowInputSpec>;
+
+/** Optional persona/model overrides for a force-run (defaults resolved by the agent). */
+type RunOptions = { persona_slug?: string; model_name?: string };
 
 // Read the entry node's declared inputs, if any.
 function entryInputsOf(flow: SavedFlow | null): FlowInputs {
@@ -164,12 +169,19 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
   );
 
   const runFlow = useCallback(
-    async (inputs: Record<string, unknown>) => {
+    async (inputs: Record<string, unknown>, opts?: RunOptions) => {
       setRunning(true);
       setRunResult(null);
       setPauseRun(null);
       try {
-        await processRunResult(await invoke<RunFlowResult>("run_flow", { id: selectedId, inputs }));
+        await processRunResult(
+          await invoke<RunFlowResult>("run_flow", {
+            id: selectedId,
+            inputs,
+            personaSlug: opts?.persona_slug || null,
+            modelName: opts?.model_name || null,
+          }),
+        );
       } catch (e) {
         reportError("run_flow", e);
       } finally {
@@ -327,6 +339,19 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
         {savedAt && <span className="text-xs text-green-400">Saved.</span>}
       </div>
 
+      {flow.requires && (
+        <RequiresBanner
+          flowId={flow.id}
+          requires={flow.requires}
+          onInstalled={() => {
+            if (selectedId)
+              invoke<SavedFlow>("get_flow", { id: selectedId })
+                .then(setFlow)
+                .catch((e) => reportError("get_flow", e));
+          }}
+        />
+      )}
+
       {runResult && (
         <RunResultPanel
           result={runResult}
@@ -416,7 +441,7 @@ function NodeInspectorWithRf({
   tab: SidebarTab;
   setTab: (t: SidebarTab) => void;
   entryInputs: FlowInputs;
-  onRun: (inputs: Record<string, unknown>) => void;
+  onRun: (inputs: Record<string, unknown>, opts?: RunOptions) => void;
   running: boolean;
   node: FlowNode | null;
   onChange: (n: FlowNode) => void;
@@ -677,7 +702,7 @@ function NodeInspector({
   tab: SidebarTab;
   setTab: (t: SidebarTab) => void;
   entryInputs: FlowInputs;
-  onRun: (inputs: Record<string, unknown>) => void;
+  onRun: (inputs: Record<string, unknown>, opts?: RunOptions) => void;
   running: boolean;
   onChange: (n: FlowNode) => void;
   onDelete: (id: string) => void;
@@ -866,13 +891,86 @@ function TypedValueInput({
   );
 }
 
+/** A banner over the editor showing a flow's declared `requires` (packs + tools),
+ *  with a one-click "Install dependencies" that installs the missing packs. */
+function RequiresBanner({
+  flowId,
+  requires,
+  onInstalled,
+}: {
+  flowId: string;
+  requires: Requires;
+  onInstalled: () => void;
+}) {
+  const reportError = useReportError();
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const packs = requires.packs ?? [];
+  const tools = requires.tools ?? [];
+  if (packs.length === 0 && tools.length === 0) return null;
+
+  const install = async () => {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const res = await invoke<InstallFlowDependenciesResult>("install_flow_dependencies", {
+        id: flowId,
+      });
+      setOutcome(
+        res.packs.length
+          ? res.packs.map((p) => `${p.pack}: ${p.status}`).join(" · ")
+          : "No packs to install.",
+      );
+      onInstalled();
+    } catch (e) {
+      reportError("install_flow_dependencies", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="px-4 py-2 bg-surface-2/60 border-b border-surface-3 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="uppercase tracking-wide text-gray-500">Requires</span>
+        <div className="flex-1 flex flex-wrap gap-1.5">
+          {packs.map((p) => (
+            <span
+              key={p.id}
+              className="px-1.5 py-0.5 rounded bg-surface-3 text-gray-300 font-mono"
+              title={p.reason ?? undefined}
+            >
+              {p.id}
+              {p.version ? `@${p.version}` : ""}
+              {p.optional ? " (opt)" : ""}
+            </span>
+          ))}
+        </div>
+        {packs.length > 0 && (
+          <button
+            onClick={install}
+            disabled={busy}
+            className="px-2 py-1 bg-accent hover:bg-accent-light text-white rounded disabled:opacity-40"
+          >
+            {busy ? "Installing…" : "Install dependencies"}
+          </button>
+        )}
+      </div>
+      {tools.length > 0 && (
+        <p className="mt-1 text-gray-500 font-mono">tools: {tools.join(", ")}</p>
+      )}
+      {outcome && <p className="mt-1 text-green-400">{outcome}</p>}
+    </div>
+  );
+}
+
 function RunTab({
   entryInputs,
   onRun,
   running,
 }: {
   entryInputs: FlowInputs;
-  onRun: (inputs: Record<string, unknown>) => void;
+  onRun: (inputs: Record<string, unknown>, opts?: RunOptions) => void;
   running: boolean;
 }) {
   const names = Object.keys(entryInputs);
@@ -897,6 +995,11 @@ function RunTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Optional persona/model overrides — blank means "let the agent decide"
+  // (defaults to the coding-agent persona and the configured default model).
+  const [persona, setPersona] = useState("");
+  const [model, setModel] = useState("");
+
   const missingRequired = names.filter((n) => {
     if (!entryInputs[n].required) return false;
     const v = values[n];
@@ -910,11 +1013,34 @@ function RunTab({
       const v = coerceInput(spec, values[name]);
       if (v !== undefined) out[name] = v;
     }
-    onRun(out);
+    onRun(out, {
+      persona_slug: persona.trim() || undefined,
+      model_name: model.trim() || undefined,
+    });
   };
 
   return (
     <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="block text-xs text-gray-500 mb-1">Persona</span>
+          <input
+            value={persona}
+            onChange={(e) => setPersona(e.target.value)}
+            placeholder="coding-agent"
+            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-xs text-gray-500 mb-1">Model</span>
+          <input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="default"
+            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
+          />
+        </label>
+      </div>
       {names.length === 0 ? (
         <p className="text-xs text-gray-500">This flow takes no inputs.</p>
       ) : (

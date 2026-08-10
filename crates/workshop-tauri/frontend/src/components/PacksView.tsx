@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
-import type { PackDetail, PackSummary, ProjectSnapshot } from "../types";
+import type {
+  Lock,
+  PackDetail,
+  PackSummary,
+  ProjectSnapshot,
+  RestoreLockfileResult,
+  RestoreOutcome,
+  UninstallPackResult,
+} from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -59,6 +67,10 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
         packId={selectedId}
         summaryEnabled={summary?.enabled ?? false}
         onToggled={refresh}
+        onUninstalled={() => {
+          onSelect(null);
+          refresh();
+        }}
         onBack={() => onSelect(null)}
       />
     );
@@ -73,6 +85,7 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
           templates around a single integration. Enabling a pack makes its
           contents visible to the agent runtime and editor.
         </p>
+        <InstallPack onInstalled={refresh} />
         {packs.length === 0 ? (
           <div className="text-sm text-gray-500 italic">No packs installed.</div>
         ) : (
@@ -119,7 +132,167 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
             ))}
           </ul>
         )}
+        <LockfilePanel />
       </div>
+    </div>
+  );
+}
+
+/** Install a pack from the registry by slug, with an optional version pin. */
+function InstallPack({ onInstalled }: { onInstalled: () => void }) {
+  const reportError = useReportError();
+  const [slug, setSlug] = useState("");
+  const [version, setVersion] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const install = async () => {
+    const s = slug.trim();
+    if (!s || busy) return;
+    setBusy(true);
+    try {
+      await invoke<PackSummary>("install_pack", {
+        slug: s,
+        version: version.trim() || null,
+        contentSha256: null,
+      });
+      setSlug("");
+      setVersion("");
+      onInstalled();
+    } catch (e) {
+      reportError("install_pack", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex gap-2">
+      <input
+        value={slug}
+        onChange={(e) => setSlug(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && install()}
+        placeholder="Install pack by registry slug…"
+        className="flex-1 min-w-0 px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-sm"
+      />
+      <input
+        value={version}
+        onChange={(e) => setVersion(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && install()}
+        placeholder="version"
+        className="w-24 px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-sm font-mono"
+      />
+      <button
+        onClick={install}
+        disabled={busy || !slug.trim()}
+        className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-light text-white rounded disabled:opacity-40"
+      >
+        {busy ? "…" : "Install"}
+      </button>
+    </div>
+  );
+}
+
+/** The `metalcraft.lock` view: pinned packs + flows, and a one-click restore that
+ *  reinstalls each at its locked version (verifying content hashes). */
+function LockfilePanel() {
+  const reportError = useReportError();
+  const [open, setOpen] = useState(false);
+  const [lock, setLock] = useState<Lock | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [outcomes, setOutcomes] = useState<RestoreOutcome[] | null>(null);
+
+  const load = () => {
+    invoke<Lock>("get_lockfile")
+      .then(setLock)
+      .catch((e) => reportError("get_lockfile", e));
+  };
+
+  useEffect(() => {
+    if (open && !lock) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const restore = async () => {
+    setRestoring(true);
+    setOutcomes(null);
+    try {
+      const res = await invoke<RestoreLockfileResult>("restore_lockfile");
+      setOutcomes(res.outcomes);
+      load();
+    } catch (e) {
+      reportError("restore_lockfile", e);
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const count = (lock?.packs.length ?? 0) + (lock?.flows.length ?? 0);
+
+  return (
+    <div className="mt-3 bg-surface-1 border border-surface-3 rounded p-4">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between text-left"
+      >
+        <span className="text-sm font-medium text-gray-200">🔒 Lockfile</span>
+        <span className="text-xs text-gray-500">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {!lock ? (
+            <div className="text-xs text-gray-500">Loading…</div>
+          ) : count === 0 ? (
+            <p className="text-xs text-gray-500">Nothing pinned yet — install a pack or flow.</p>
+          ) : (
+            <>
+              <LockGroup title="Packs" entries={lock.packs} />
+              <LockGroup title="Flows" entries={lock.flows} />
+              <button
+                onClick={restore}
+                disabled={restoring}
+                className="px-3 py-1.5 text-xs bg-surface-2 hover:bg-surface-3 text-gray-200 border border-surface-3 rounded disabled:opacity-40"
+              >
+                {restoring ? "Restoring…" : "Restore all from lockfile"}
+              </button>
+            </>
+          )}
+          {outcomes && (
+            <ul className="space-y-0.5 text-[11px]">
+              {outcomes.map((o, i) => (
+                <li key={i} className={o.status === "installed" ? "text-green-400" : "text-red-400"}>
+                  {o.kind} {o.name}@{o.version}: {o.status}
+                  {o.detail ? ` — ${o.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LockGroup({ title, entries }: { title: string; entries: Lock["packs"] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">{title}</h4>
+      <ul className="space-y-1">
+        {entries.map((e) => (
+          <li
+            key={e.name}
+            className="px-2 py-1.5 bg-surface-2 border border-surface-3 rounded font-mono text-[11px]"
+          >
+            <div className="flex items-center gap-2">
+              <span className="flex-1 min-w-0 truncate text-gray-300">{e.name}</span>
+              <span className="text-gray-500">v{e.version}</span>
+            </div>
+            <div className="truncate text-[10px] text-gray-600">
+              {e.content_sha256.slice(0, 12)}… · {e.source}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -165,11 +338,13 @@ function PackDetailPanel({
   packId,
   summaryEnabled,
   onToggled,
+  onUninstalled,
   onBack,
 }: {
   packId: string;
   summaryEnabled: boolean;
   onToggled: () => void;
+  onUninstalled: () => void;
   onBack: () => void;
 }) {
   const reportError = useReportError();
@@ -211,12 +386,13 @@ function PackDetailPanel({
           )}
         </header>
 
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
           <PackToggle
             packId={detail.id}
             enabled={summaryEnabled}
             onChanged={onToggled}
           />
+          <UninstallPack packId={detail.id} onUninstalled={onUninstalled} />
         </div>
 
         <Section title="Personas" items={detail.personas} />
@@ -224,6 +400,84 @@ function PackDetailPanel({
         <Section title="API tools" items={detail.api_tools} />
         <Section title="Flow templates" items={detail.flow_templates} />
       </div>
+    </div>
+  );
+}
+
+/** Uninstall a pack; surfaces which flows/personas still depend on it afterward. */
+function UninstallPack({
+  packId,
+  onUninstalled,
+}: {
+  packId: string;
+  onUninstalled: () => void;
+}) {
+  const reportError = useReportError();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<UninstallPackResult | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const res = await invoke<UninstallPackResult>("uninstall_pack", { id: packId });
+      if (res.dependent_flows.length + res.dependent_personas.length > 0) {
+        setResult(res); // keep the warning visible before leaving
+      } else {
+        onUninstalled();
+      }
+    } catch (e) {
+      reportError("uninstall_pack", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (result) {
+    return (
+      <div className="w-full space-y-2 rounded border border-amber-800/50 bg-amber-900/20 p-3 text-xs text-amber-300">
+        <p>Uninstalled — but these still reference it until edited or reinstalled:</p>
+        {result.dependent_flows.length > 0 && <p>Flows: {result.dependent_flows.join(", ")}</p>}
+        {result.dependent_personas.length > 0 && (
+          <p>Personas: {result.dependent_personas.join(", ")}</p>
+        )}
+        <button
+          onClick={onUninstalled}
+          className="px-2 py-1 bg-surface-2 hover:bg-surface-3 text-gray-200 border border-surface-3 rounded"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        onClick={() => setConfirming(true)}
+        className="px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded font-medium"
+      >
+        Uninstall
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-gray-400">Remove this pack?</span>
+      <button
+        onClick={run}
+        disabled={busy}
+        className="px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded font-medium disabled:opacity-40"
+      >
+        {busy ? "…" : "Confirm"}
+      </button>
+      <button
+        onClick={() => setConfirming(false)}
+        disabled={busy}
+        className="px-3 py-1.5 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
+      >
+        Cancel
+      </button>
     </div>
   );
 }

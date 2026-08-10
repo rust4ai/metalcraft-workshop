@@ -225,6 +225,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flows/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a registry flow onto this agent: download its `SavedFlow` JSON from
+         *     flows.metalcraftai.com, validate it, and save it into the flows dir (installed
+         *     disabled). Returns `{ flow, dependencies }` — the dependency report lists any
+         *     packs/personas the flow needs that aren't installed yet.
+         */
+        post: operations["post_install_flow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flows/{id}": {
         parameters: {
             query?: never;
@@ -236,6 +258,29 @@ export interface paths {
         put: operations["put_flow"];
         post?: never;
         delete: operations["delete_flow"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id}/install-dependencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install the integration packs an already-installed flow declares in its
+         *     `requires` block: for each, resolve its semver range against the registry,
+         *     download that exact version, verify the content hash, install, and enable it.
+         *     Returns one outcome per pack. Idempotent — packs already satisfied are left
+         *     untouched.
+         */
+        post: operations["post_install_flow_dependencies"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -469,6 +514,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integration-packs/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a registry pack onto this agent: download its ZIP from
+         *     packs.metalcraftai.com, extract it into the data dir, and enable it. Returns
+         *     the new pack's summary (same shape as the list endpoint).
+         */
+        post: operations["post_install_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integration-packs/{id}": {
         parameters: {
             query?: never;
@@ -479,7 +545,7 @@ export interface paths {
         get: operations["get_integration_pack"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["delete_integration_pack"];
         options?: never;
         head?: never;
         patch?: never;
@@ -581,6 +647,48 @@ export interface paths {
         get: operations["reveal_key"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lockfile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The pod's `metalcraft.lock` — every registry pack/flow pinned to an exact
+         *     version + content hash. Export it to clone a pod's toolset, or feed it to
+         *     `/lockfile/restore` on a rebuilt pod.
+         */
+        get: operations["get_lockfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lockfile/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reinstall everything in the lockfile at its pinned version, verifying each against
+         *     its locked content hash — the reproducible-rebuild path for a fresh or cloned pod.
+         *     Returns one outcome per entry; a failure on one entry doesn't stop the rest.
+         */
+        post: operations["post_lockfile_restore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -834,6 +942,31 @@ export interface components {
             };
             type_id: string;
         };
+        /** @description What a flow needs beyond itself, checked against this agent's current state. */
+        DependencyReport: {
+            /** @description Of `required_packs`, those not installed *and enabled* on this agent. */
+            missing_packs: string[];
+            /** @description Of `required_personas`, those not available on this agent. */
+            missing_personas: string[];
+            /** @description Secret keys the required (installed) packs declare in their `requires_env`. */
+            required_env: string[];
+            /**
+             * @description Integration packs the flow requires — the union of what the graph
+             *     references (`sub_agent.pack` + custom vendor nodes) and what the flow's
+             *     `requires` block declares.
+             */
+            required_packs: string[];
+            /** @description Personas the flow's nodes run as (`data.persona`). */
+            required_personas: string[];
+            /** @description Tool names the flow's `tool` nodes invoke (the real API surface). */
+            required_tools: string[];
+            /**
+             * @description Version/hash conflicts: a required pack is installed & enabled but its
+             *     version is outside the declared range, or its content hash doesn't match a
+             *     pin. Human-readable, one per conflict (advisory — install never hard-fails).
+             */
+            version_conflicts: string[];
+        };
         /**
          * @description A fully reconstructed session: its `session_info.json` plus an ordered
          *     timeline of every other JSON event file in the directory.
@@ -866,6 +999,74 @@ export interface components {
             prompt_index: number;
             /** @description "completed" | "interrupted" | "failed". */
             status: string;
+        };
+        /** @description A persisted flow run. */
+        FlowRun: {
+            /** @description RFC-3339 creation timestamp. */
+            created_at: string;
+            /** @description The node the run is paused at (for `paused`) or last ran. */
+            current_node_id: string;
+            /** @description Working directory to resume in. */
+            cwd: string;
+            /**
+             * @description Snapshot of the flow definition at pause time, so resume routes against
+             *     the graph the run actually paused in — not a since-edited on-disk flow.
+             *     Absent (`None`) on legacy records; resume then falls back to loading the
+             *     current flow.
+             */
+            flow?: Record<string, never> | null;
+            /** @description The flow this run belongs to. */
+            flow_id: string;
+            /** @description Unique run id (the `runs/{id}.json` filename). */
+            id: string;
+            /** @description Model name to resume with. */
+            model: string;
+            pause?: null | components["schemas"]["PauseInfo"];
+            /** @description Persona/model/cwd needed to resume the run. */
+            persona: string;
+            /** @description `running` | `paused` | `completed` | `failed`. */
+            status: string;
+            /** @description The trace accumulated so far. */
+            steps: components["schemas"]["FlowStep"][];
+            /** @description RFC-3339 last-update timestamp. */
+            updated_at: string;
+            /** @description The run's state (`variables`) at the checkpoint. */
+            variables: Record<string, never>;
+            /**
+             * @description Non-fatal warnings computed when the run started — e.g. required packs/personas
+             *     that aren't installed or enabled. Surfaced in flow-debug UIs so a run that can't
+             *     fully work says why. Empty (and omitted) when the flow has everything it needs.
+             */
+            warnings?: string[];
+        };
+        /** @description The result of running (or pausing) a flow. */
+        FlowRunSummary: {
+            /** @description The flow that ran. */
+            flow_id: string;
+            /** @description The run id (matches the `runs/{id}.json` record when the run paused). */
+            run_id: string;
+            /** @description `completed` | `failed` | `paused`. */
+            status: string;
+            /** @description Per-node trace, in execution order. */
+            steps: components["schemas"]["FlowStep"][];
+            /** @description Final (or checkpointed) state — the `variables` object. */
+            variables: Record<string, never>;
+            /**
+             * @description Missing-dependency warnings for this run (empty when the flow has everything
+             *     it needs). Shown in flow-debug UIs.
+             */
+            warnings?: string[];
+        };
+        /** @description One node's contribution to the run trace. */
+        FlowStep: {
+            /** @description Optional human-readable detail (answer snippet, error, chosen handle). */
+            detail?: string | null;
+            /** @description The node that ran. */
+            node_id: string;
+            /** @description Its wire-format type. */
+            node_type: string;
+            /** @description `advanced` | `routed:<handle>` | `completed` | `failed`. */
+            outcome: string;
         };
         FlowTemplate: {
             /** @description The raw template flow JSON, ready to be cloned and edited as a new flow. */
@@ -983,6 +1184,41 @@ export interface components {
             poll?: boolean;
             url: string;
         };
+        /** @description Response for `POST /flows/{id}/install-dependencies`. */
+        InstallDependenciesResponse: {
+            /** @description The flow whose dependencies were installed. */
+            flow: string;
+            /** @description One outcome per required pack. */
+            packs: components["schemas"]["PackInstallOutcome"][];
+        };
+        InstallFlowRequest: {
+            /** @description Registry slug of the flow to install (equals the flow id). */
+            slug: string;
+        };
+        InstallPackRequest: {
+            /**
+             * @description Optional integrity pin: if set, the downloaded pack's canonical content
+             *     hash must match this or the install is refused.
+             */
+            content_sha256?: string | null;
+            /** @description Registry slug of the pack to install (equals the pack id). */
+            slug: string;
+            /** @description Optional specific version to install (defaults to the registry's latest). */
+            version?: string | null;
+        };
+        /** @description The result of a successful install: what landed + what it still needs. */
+        InstallResult: {
+            dependencies: components["schemas"]["DependencyReport"];
+            flow: components["schemas"]["InstalledFlow"];
+        };
+        /** @description Summary of the flow that was written. */
+        InstalledFlow: {
+            /** @description Whether the flow is enabled for scheduling. Registry flows install disabled. */
+            enabled: boolean;
+            id: string;
+            name: string;
+            node_count: number;
+        };
         IntegrationPackDetail: {
             api_tools: string[];
             description: string;
@@ -1048,6 +1284,27 @@ export interface components {
             channel_id?: string | null;
             value: string;
         };
+        /** @description The lockfile document. */
+        Lock: {
+            flows?: components["schemas"]["LockEntry"][];
+            packs?: components["schemas"]["LockEntry"][];
+            /**
+             * Format: int32
+             * @description Lockfile format version (not the artifacts' versions).
+             */
+            version?: number;
+        };
+        /** @description One pinned artifact in the lockfile. */
+        LockEntry: {
+            /** @description Integrity hash of the installed content (verified on restore). */
+            content_sha256: string;
+            /** @description Registry slug (== pack id / flow id). */
+            name: string;
+            /** @description Registry origin the artifact came from (e.g. `https://packs.metalcraftai.com`). */
+            source: string;
+            /** @description The concrete version installed. */
+            version: string;
+        };
         MgConnectRequest: {
             /**
              * @description Audience-scoped connection token from the k3 broker, adopted as the
@@ -1071,6 +1328,31 @@ export interface components {
             file_field: string;
             /** @description Incoming argument that holds the local file path to upload. */
             file_param: string;
+        };
+        /** @description Outcome of trying to satisfy one pack requirement of a flow. */
+        PackInstallOutcome: {
+            /** @description Human-readable detail (why it was skipped/failed, or the resolved version). */
+            detail?: string | null;
+            /** @description The pack id. */
+            pack: string;
+            /** @description `"installed" | "already-satisfied" | "skipped" | "failed"`. */
+            status: string;
+            /** @description The version installed (or already present), when known. */
+            version?: string | null;
+        };
+        /** @description Why a run is paused and what will resume it. */
+        PauseInfo: {
+            /** @description For `approval`: the (interpolated) prompt shown to the human. */
+            message?: string | null;
+            /** @description `"approval"` or `"wait"`. */
+            reason: string;
+            /**
+             * @description For `approval`: the decision handles a human may choose. For `wait`:
+             *     typically `["after"]`.
+             */
+            resume_handles: string[];
+            /** @description For `wait`: RFC-3339 timestamp at/after which the run may resume. */
+            wake_at?: string | null;
         };
         Persona: {
             description: string;
@@ -1145,12 +1427,32 @@ export interface components {
             name: string;
             packs: string[];
         };
+        RestoreOutcome: {
+            detail?: string | null;
+            kind: string;
+            name: string;
+            /** @description `installed` | `failed`. */
+            status: string;
+            version: string;
+        };
+        /** @description Wrapper for the lockfile-restore response (`{ outcomes: [...] }`). */
+        RestoreResult: {
+            outcomes: components["schemas"]["RestoreOutcome"][];
+        };
         ResumeFlowRunRequest: {
             /** @description Optional value to set as the resumed node's `_last` input. */
             data?: unknown;
             /** @description Handle to take (an approval decision, or `"after"` for a wait). */
             handle: string;
         };
+        /**
+         * @description The run endpoint returns one of two shapes depending on the flow's spec
+         *     version: v2 (state-machine) flows return a [`FlowRunSummary`]; v1 (linear)
+         *     flows return a [`RunFlowResponse`]. Documented as a `oneOf` so generated
+         *     clients see a proper union rather than an opaque object. Never constructed —
+         *     it exists only to describe the response schema.
+         */
+        RunFlowOutput: components["schemas"]["FlowRunSummary"] | components["schemas"]["RunFlowResponse"];
         RunFlowRequest: {
             /**
              * @description Values for the flow's declared entry `inputs`. Object of `{ name: value }`;
@@ -1213,6 +1515,15 @@ export interface components {
             data: unknown;
             file: string;
             kind: string;
+        };
+        UninstallPackResult: {
+            /**
+             * @description Installed flows that still reference the removed pack — they'll fail to resolve
+             *     it until the pack is reinstalled or the flow is edited.
+             */
+            dependent_flows: string[];
+            /** @description Surviving personas that still declare the removed pack in their `packs` list. */
+            dependent_personas: string[];
         };
         UpdateGatewayChannelRequest: {
             enabled?: boolean;
@@ -1532,7 +1843,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["FlowRun"][];
                 };
             };
         };
@@ -1555,7 +1866,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["FlowRun"];
                 };
             };
             404: {
@@ -1590,7 +1901,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["FlowRunSummary"];
                 };
             };
         };
@@ -1635,6 +1946,46 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_install_flow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description Installed flow + dependency report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1721,6 +2072,37 @@ export interface operations {
             };
         };
     };
+    post_install_flow_dependencies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-pack install outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallDependenciesResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     post_run_flow: {
         parameters: {
             query?: never;
@@ -1737,12 +2119,13 @@ export interface operations {
             };
         };
         responses: {
+            /** @description v2 flows return a FlowRunSummary; v1 flows return a RunFlowResponse */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunFlowResponse"];
+                    "application/json": components["schemas"]["RunFlowOutput"];
                 };
             };
         };
@@ -2046,6 +2429,45 @@ export interface operations {
             };
         };
     };
+    post_install_pack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallPackRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationPackSummary"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_integration_pack: {
         parameters: {
             query?: never;
@@ -2064,6 +2486,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationPackDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_integration_pack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Pack id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Uninstalled; body lists anything that still depends on the pack */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UninstallPackResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             404: {
@@ -2217,6 +2678,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_lockfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The install lockfile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lock"];
+                };
+            };
+        };
+    };
+    post_lockfile_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-entry restore outcomes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResult"];
                 };
             };
         };

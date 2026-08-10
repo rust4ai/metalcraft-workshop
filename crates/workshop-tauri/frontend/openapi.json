@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.15.0"
+    "version": "0.25.0"
   },
   "paths": {
     "/api/v1/api-tools": {
@@ -393,7 +393,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FlowRun"
+                  }
                 }
               }
             }
@@ -425,7 +428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/FlowRun"
                 }
               }
             }
@@ -477,7 +480,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/FlowRunSummary"
                 }
               }
             }
@@ -537,6 +540,57 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/install": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Install a registry flow onto this agent: download its `SavedFlow` JSON from\nflows.metalcraftai.com, validate it, and save it into the flows dir (installed\ndisabled). Returns `{ flow, dependencies }` — the dependency report lists any\npacks/personas the flow needs that aren't installed yet.",
+        "operationId": "post_install_flow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallFlowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Installed flow + dependency report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
             "description": "",
             "content": {
               "application/json": {
@@ -644,6 +698,48 @@
         }
       }
     },
+    "/api/v1/flows/{id}/install-dependencies": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Install the integration packs an already-installed flow declares in its\n`requires` block: for each, resolve its semver range against the registry,\ndownload that exact version, verify the content hash, install, and enable it.\nReturns one outcome per pack. Idempotent — packs already satisfied are left\nuntouched.",
+        "operationId": "post_install_flow_dependencies",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-pack install outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallDependenciesResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/flows/{id}/run": {
       "post": {
         "tags": [
@@ -673,11 +769,11 @@
         },
         "responses": {
           "200": {
-            "description": "",
+            "description": "v2 flows return a FlowRunSummary; v1 flows return a RunFlowResponse",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunFlowResponse"
+                  "$ref": "#/components/schemas/RunFlowOutput"
                 }
               }
             }
@@ -1040,6 +1136,57 @@
         }
       }
     },
+    "/api/v1/integration-packs/install": {
+      "post": {
+        "tags": [
+          "integration-packs"
+        ],
+        "summary": "Install a registry pack onto this agent: download its ZIP from\npacks.metalcraftai.com, extract it into the data dir, and enable it. Returns\nthe new pack's summary (same shape as the list endpoint).",
+        "operationId": "post_install_pack",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallPackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationPackSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/integration-packs/{id}": {
       "get": {
         "tags": [
@@ -1064,6 +1211,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/IntegrationPackDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "integration-packs"
+        ],
+        "operationId": "delete_integration_pack",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Pack id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uninstalled; body lists anything that still depends on the pack",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UninstallPackResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1273,6 +1469,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lockfile": {
+      "get": {
+        "tags": [
+          "lockfile"
+        ],
+        "summary": "The pod's `metalcraft.lock` — every registry pack/flow pinned to an exact\nversion + content hash. Export it to clone a pod's toolset, or feed it to\n`/lockfile/restore` on a rebuilt pod.",
+        "operationId": "get_lockfile",
+        "responses": {
+          "200": {
+            "description": "The install lockfile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lock"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lockfile/restore": {
+      "post": {
+        "tags": [
+          "lockfile"
+        ],
+        "summary": "Reinstall everything in the lockfile at its pinned version, verifying each against\nits locked content hash — the reproducible-rebuild path for a fresh or cloned pod.\nReturns one outcome per entry; a failure on one entry doesn't stop the rest.",
+        "operationId": "post_lockfile_restore",
+        "responses": {
+          "200": {
+            "description": "Per-entry restore outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResult"
                 }
               }
             }
@@ -2095,6 +2333,70 @@
           }
         }
       },
+      "DependencyReport": {
+        "type": "object",
+        "description": "What a flow needs beyond itself, checked against this agent's current state.",
+        "required": [
+          "required_packs",
+          "missing_packs",
+          "version_conflicts",
+          "required_tools",
+          "required_personas",
+          "missing_personas",
+          "required_env"
+        ],
+        "properties": {
+          "missing_packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Of `required_packs`, those not installed *and enabled* on this agent."
+          },
+          "missing_personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Of `required_personas`, those not available on this agent."
+          },
+          "required_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Secret keys the required (installed) packs declare in their `requires_env`."
+          },
+          "required_packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Integration packs the flow requires — the union of what the graph\nreferences (`sub_agent.pack` + custom vendor nodes) and what the flow's\n`requires` block declares."
+          },
+          "required_personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Personas the flow's nodes run as (`data.persona`)."
+          },
+          "required_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tool names the flow's `tool` nodes invoke (the real API surface)."
+          },
+          "version_conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Version/hash conflicts: a required pack is installed & enabled but its\nversion is outside the declared range, or its content hash doesn't match a\npin. Human-readable, one per conflict (advisory — install never hard-fails)."
+          }
+        }
+      },
       "DiagnosticsSession": {
         "type": "object",
         "description": "A fully reconstructed session: its `session_info.json` plus an ordered\ntimeline of every other JSON event file in the directory.",
@@ -2201,6 +2503,170 @@
           "status": {
             "type": "string",
             "description": "\"completed\" | \"interrupted\" | \"failed\"."
+          }
+        }
+      },
+      "FlowRun": {
+        "type": "object",
+        "description": "A persisted flow run.",
+        "required": [
+          "id",
+          "flow_id",
+          "status",
+          "current_node_id",
+          "variables",
+          "persona",
+          "model",
+          "cwd",
+          "steps",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "description": "RFC-3339 creation timestamp."
+          },
+          "current_node_id": {
+            "type": "string",
+            "description": "The node the run is paused at (for `paused`) or last ran."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory to resume in."
+          },
+          "flow": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Snapshot of the flow definition at pause time, so resume routes against\nthe graph the run actually paused in — not a since-edited on-disk flow.\nAbsent (`None`) on legacy records; resume then falls back to loading the\ncurrent flow."
+          },
+          "flow_id": {
+            "type": "string",
+            "description": "The flow this run belongs to."
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique run id (the `runs/{id}.json` filename)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model name to resume with."
+          },
+          "pause": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PauseInfo",
+                "description": "Pause details when `status == \"paused\"`."
+              }
+            ]
+          },
+          "persona": {
+            "type": "string",
+            "description": "Persona/model/cwd needed to resume the run."
+          },
+          "status": {
+            "type": "string",
+            "description": "`running` | `paused` | `completed` | `failed`."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowStep"
+            },
+            "description": "The trace accumulated so far."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "RFC-3339 last-update timestamp."
+          },
+          "variables": {
+            "type": "object",
+            "description": "The run's state (`variables`) at the checkpoint."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Non-fatal warnings computed when the run started — e.g. required packs/personas\nthat aren't installed or enabled. Surfaced in flow-debug UIs so a run that can't\nfully work says why. Empty (and omitted) when the flow has everything it needs."
+          }
+        }
+      },
+      "FlowRunSummary": {
+        "type": "object",
+        "description": "The result of running (or pausing) a flow.",
+        "required": [
+          "run_id",
+          "flow_id",
+          "status",
+          "steps",
+          "variables"
+        ],
+        "properties": {
+          "flow_id": {
+            "type": "string",
+            "description": "The flow that ran."
+          },
+          "run_id": {
+            "type": "string",
+            "description": "The run id (matches the `runs/{id}.json` record when the run paused)."
+          },
+          "status": {
+            "type": "string",
+            "description": "`completed` | `failed` | `paused`."
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowStep"
+            },
+            "description": "Per-node trace, in execution order."
+          },
+          "variables": {
+            "type": "object",
+            "description": "Final (or checkpointed) state — the `variables` object."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Missing-dependency warnings for this run (empty when the flow has everything\nit needs). Shown in flow-debug UIs."
+          }
+        }
+      },
+      "FlowStep": {
+        "type": "object",
+        "description": "One node's contribution to the run trace.",
+        "required": [
+          "node_id",
+          "node_type",
+          "outcome"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional human-readable detail (answer snippet, error, chosen handle)."
+          },
+          "node_id": {
+            "type": "string",
+            "description": "The node that ran."
+          },
+          "node_type": {
+            "type": "string",
+            "description": "Its wire-format type."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`advanced` | `routed:<handle>` | `completed` | `failed`."
           }
         }
       },
@@ -2468,6 +2934,107 @@
           }
         }
       },
+      "InstallDependenciesResponse": {
+        "type": "object",
+        "description": "Response for `POST /flows/{id}/install-dependencies`.",
+        "required": [
+          "flow",
+          "packs"
+        ],
+        "properties": {
+          "flow": {
+            "type": "string",
+            "description": "The flow whose dependencies were installed."
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackInstallOutcome"
+            },
+            "description": "One outcome per required pack."
+          }
+        }
+      },
+      "InstallFlowRequest": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Registry slug of the flow to install (equals the flow id)."
+          }
+        }
+      },
+      "InstallPackRequest": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "content_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional integrity pin: if set, the downloaded pack's canonical content\nhash must match this or the install is refused."
+          },
+          "slug": {
+            "type": "string",
+            "description": "Registry slug of the pack to install (equals the pack id)."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional specific version to install (defaults to the registry's latest)."
+          }
+        }
+      },
+      "InstallResult": {
+        "type": "object",
+        "description": "The result of a successful install: what landed + what it still needs.",
+        "required": [
+          "flow",
+          "dependencies"
+        ],
+        "properties": {
+          "dependencies": {
+            "$ref": "#/components/schemas/DependencyReport"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/InstalledFlow"
+          }
+        }
+      },
+      "InstalledFlow": {
+        "type": "object",
+        "description": "Summary of the flow that was written.",
+        "required": [
+          "id",
+          "name",
+          "node_count",
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the flow is enabled for scheduling. Registry flows install disabled."
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "IntegrationPackDetail": {
         "type": "object",
         "required": [
@@ -2678,6 +3245,58 @@
           }
         }
       },
+      "Lock": {
+        "type": "object",
+        "description": "The lockfile document.",
+        "properties": {
+          "flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockEntry"
+            }
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockEntry"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Lockfile format version (not the artifacts' versions).",
+            "minimum": 0
+          }
+        }
+      },
+      "LockEntry": {
+        "type": "object",
+        "description": "One pinned artifact in the lockfile.",
+        "required": [
+          "name",
+          "version",
+          "content_sha256",
+          "source"
+        ],
+        "properties": {
+          "content_sha256": {
+            "type": "string",
+            "description": "Integrity hash of the installed content (verified on restore)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Registry slug (== pack id / flow id)."
+          },
+          "source": {
+            "type": "string",
+            "description": "Registry origin the artifact came from (e.g. `https://packs.metalcraftai.com`)."
+          },
+          "version": {
+            "type": "string",
+            "description": "The concrete version installed."
+          }
+        }
+      },
       "MgConnectRequest": {
         "type": "object",
         "properties": {
@@ -2723,6 +3342,73 @@
           "file_param": {
             "type": "string",
             "description": "Incoming argument that holds the local file path to upload."
+          }
+        }
+      },
+      "PackInstallOutcome": {
+        "type": "object",
+        "description": "Outcome of trying to satisfy one pack requirement of a flow.",
+        "required": [
+          "pack",
+          "status"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable detail (why it was skipped/failed, or the resolved version)."
+          },
+          "pack": {
+            "type": "string",
+            "description": "The pack id."
+          },
+          "status": {
+            "type": "string",
+            "description": "`\"installed\" | \"already-satisfied\" | \"skipped\" | \"failed\"`."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The version installed (or already present), when known."
+          }
+        }
+      },
+      "PauseInfo": {
+        "type": "object",
+        "description": "Why a run is paused and what will resume it.",
+        "required": [
+          "reason",
+          "resume_handles"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For `approval`: the (interpolated) prompt shown to the human."
+          },
+          "reason": {
+            "type": "string",
+            "description": "`\"approval\"` or `\"wait\"`."
+          },
+          "resume_handles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "For `approval`: the decision handles a human may choose. For `wait`:\ntypically `[\"after\"]`."
+          },
+          "wake_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For `wait`: RFC-3339 timestamp at/after which the run may resume."
           }
         }
       },
@@ -2915,6 +3601,51 @@
           }
         }
       },
+      "RestoreOutcome": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "version",
+          "status"
+        ],
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "`installed` | `failed`."
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "RestoreResult": {
+        "type": "object",
+        "description": "Wrapper for the lockfile-restore response (`{ outcomes: [...] }`).",
+        "required": [
+          "outcomes"
+        ],
+        "properties": {
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RestoreOutcome"
+            }
+          }
+        }
+      },
       "ResumeFlowRunRequest": {
         "type": "object",
         "required": [
@@ -2929,6 +3660,17 @@
             "description": "Handle to take (an approval decision, or `\"after\"` for a wait)."
           }
         }
+      },
+      "RunFlowOutput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FlowRunSummary"
+          },
+          {
+            "$ref": "#/components/schemas/RunFlowResponse"
+          }
+        ],
+        "description": "The run endpoint returns one of two shapes depending on the flow's spec\nversion: v2 (state-machine) flows return a [`FlowRunSummary`]; v1 (linear)\nflows return a [`RunFlowResponse`]. Documented as a `oneOf` so generated\nclients see a proper union rather than an opaque object. Never constructed —\nit exists only to describe the response schema."
       },
       "RunFlowRequest": {
         "type": "object",
@@ -3088,6 +3830,29 @@
           },
           "kind": {
             "type": "string"
+          }
+        }
+      },
+      "UninstallPackResult": {
+        "type": "object",
+        "required": [
+          "dependent_flows",
+          "dependent_personas"
+        ],
+        "properties": {
+          "dependent_flows": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Installed flows that still reference the removed pack — they'll fail to resolve\nit until the pack is reinstalled or the flow is edited."
+          },
+          "dependent_personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Surviving personas that still declare the removed pack in their `packs` list."
           }
         }
       },

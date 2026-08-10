@@ -539,6 +539,38 @@ async fn list_flow_runs(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn install_flow(
+    slug: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    let result = conn.install_flow(&slug).await.map_err(|e| e.to_string())?;
+    // A new flow landed — refresh the snapshot so the sidebar lists it.
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: slug.clone(),
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+async fn install_flow_dependencies(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    let result = conn
+        .install_flow_dependencies(&id)
+        .await
+        .map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: id.clone(),
+    });
+    Ok(result)
+}
+
 // ---- Chats ----
 
 #[tauri::command]
@@ -755,6 +787,60 @@ async fn set_pack_enabled(
         id: id.clone(),
     });
     Ok(())
+}
+
+#[tauri::command]
+async fn install_pack(
+    slug: String,
+    version: Option<String>,
+    content_sha256: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<PackSummary, String> {
+    let conn = require_connection(&state)?;
+    let summary = conn
+        .install_pack(&slug, version.as_deref(), content_sha256.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: slug.clone(),
+    });
+    Ok(summary)
+}
+
+#[tauri::command]
+async fn uninstall_pack(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    let result = conn.uninstall_pack(&id).await.map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: id.clone(),
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_lockfile(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    conn.get_lockfile().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn restore_lockfile(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let conn = require_connection(&state)?;
+    let result = conn.restore_lockfile().await.map_err(|e| e.to_string())?;
+    state.emit(WorkshopEvent::SaveOk {
+        kind: FileKind::Unknown,
+        id: "lockfile".to_string(),
+    });
+    Ok(result)
 }
 
 // ---------- Gateway channel commands ----------
@@ -1422,6 +1508,8 @@ fn main() {
             resume_flow_run,
             get_flow_run,
             list_flow_runs,
+            install_flow,
+            install_flow_dependencies,
             list_chats,
             get_chat,
             create_chat,
@@ -1434,6 +1522,10 @@ fn main() {
             list_integration_packs,
             get_integration_pack,
             set_pack_enabled,
+            install_pack,
+            uninstall_pack,
+            get_lockfile,
+            restore_lockfile,
             list_gateway_types,
             list_gateway_channels,
             gateway_metalcraft_status,

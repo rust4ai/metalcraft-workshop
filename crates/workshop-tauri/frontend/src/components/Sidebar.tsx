@@ -1,4 +1,6 @@
-import type { ChatSummary, DiagnosticsSessionSummary, ProjectSnapshot } from "../types";
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { ChatSummary, DiagnosticsSessionSummary, InstallResult, ProjectSnapshot } from "../types";
 import type { Section } from "../App";
 
 interface Props {
@@ -87,7 +89,13 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
       </div>
 
       {section === "flows" && (
-        <NewButton onClick={() => onSelect("__new__")} label="+ New Flow" />
+        <div className="flex flex-col">
+          <NewButton onClick={() => onSelect("__new__")} label="+ New Flow" />
+          <InstallFromRegistry
+            label="Install flow from registry…"
+            onInstall={(slug) => invoke<InstallResult>("install_flow", { slug })}
+          />
+        </div>
       )}
       {section === "personas" && (
         <NewButton onClick={() => onSelect("__new__")} label="+ New Persona" />
@@ -119,6 +127,50 @@ function NewButton({ onClick, label }: { onClick: () => void; label: string }) {
     >
       {label}
     </button>
+  );
+}
+
+/** Install a flow (or pack) from the registry by slug. The install command emits
+ *  a `save_ok` workshop-event, so the sidebar list refreshes on its own. */
+function InstallFromRegistry({
+  label,
+  onInstall,
+}: {
+  label: string;
+  onInstall: (slug: string) => Promise<unknown>;
+}) {
+  const [slug, setSlug] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    const s = slug.trim();
+    if (!s || busy) return;
+    setBusy(true);
+    try {
+      await onInstall(s);
+      setSlug("");
+    } catch (e) {
+      console.error("install from registry", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mx-3 mb-2 flex gap-1">
+      <input
+        value={slug}
+        onChange={(e) => setSlug(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && run()}
+        placeholder={label}
+        className="flex-1 min-w-0 px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs"
+      />
+      <button
+        onClick={run}
+        disabled={busy || !slug.trim()}
+        className="px-2 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded disabled:opacity-40"
+      >
+        {busy ? "…" : "Install"}
+      </button>
+    </div>
   );
 }
 

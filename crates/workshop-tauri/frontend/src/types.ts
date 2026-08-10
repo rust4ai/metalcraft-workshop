@@ -51,6 +51,22 @@ export interface FlowDefinition {
   edges: FlowEdge[];
 }
 
+/** One integration-pack dependency declared in a flow's `requires` block. */
+export interface PackRequirement {
+  id: string;
+  version?: string | null;
+  content_sha256?: string | null;
+  reason?: string | null;
+  optional?: boolean;
+  resolved_version?: string | null;
+}
+
+/** A flow's declared dependencies (`requires` block). */
+export interface Requires {
+  packs?: PackRequirement[];
+  tools?: string[];
+}
+
 export interface SavedFlow {
   spec_version: string;
   id: string;
@@ -58,6 +74,7 @@ export interface SavedFlow {
   created_at: string;
   updated_at: string;
   enabled: boolean;
+  requires?: Requires | null;
   flow: FlowDefinition;
 }
 
@@ -305,6 +322,80 @@ export interface RunFlowResult {
   status?: string; // "completed" | "failed" | "paused"
   steps?: FlowStep[];
   variables?: Record<string, unknown>;
+  warnings?: string[];
+}
+
+// ── Flow install-from-registry + dependency install ──────────────────────────
+
+/** Dependency report from installing a flow (`install_flow`). */
+export interface DependencyReport {
+  required_packs: string[];
+  missing_packs: string[];
+  version_conflicts: string[];
+  required_tools: string[];
+  required_personas: string[];
+  missing_personas: string[];
+  required_env: string[];
+}
+
+export interface InstalledFlow {
+  id: string;
+  name: string;
+  node_count: number;
+  enabled: boolean;
+}
+
+export interface InstallResult {
+  flow: InstalledFlow;
+  dependencies: DependencyReport;
+}
+
+/** One pack-install outcome from `install_flow_dependencies`. */
+export interface PackInstallOutcome {
+  pack: string;
+  version?: string | null;
+  status: string; // installed | already-satisfied | skipped | failed
+  detail?: string | null;
+}
+
+export interface InstallFlowDependenciesResult {
+  flow: string;
+  packs: PackInstallOutcome[];
+}
+
+// ── Packs: uninstall + lockfile ──────────────────────────────────────────────
+
+/** `dependent_flows` / `dependent_personas` still referencing an uninstalled pack. */
+export interface UninstallPackResult {
+  dependent_flows: string[];
+  dependent_personas: string[];
+}
+
+/** One pinned entry in the agent's `metalcraft.lock`. */
+export interface LockEntry {
+  name: string;
+  version: string;
+  content_sha256: string;
+  source: string;
+}
+
+export interface Lock {
+  version: number;
+  packs: LockEntry[];
+  flows: LockEntry[];
+}
+
+/** One reinstall outcome from `restore_lockfile`. */
+export interface RestoreOutcome {
+  kind: string; // "pack" | "flow"
+  name: string;
+  version: string;
+  status: string; // "installed" | "failed"
+  detail?: string | null;
+}
+
+export interface RestoreLockfileResult {
+  outcomes: RestoreOutcome[];
 }
 
 export interface FlowRunPause {
@@ -323,6 +414,7 @@ export interface FlowRun {
   variables: Record<string, unknown>;
   pause?: FlowRunPause | null;
   steps: FlowStep[];
+  warnings?: string[];
   created_at: string;
   updated_at: string;
 }
