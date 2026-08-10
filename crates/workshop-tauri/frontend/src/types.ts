@@ -325,78 +325,21 @@ export interface RunFlowResult {
   warnings?: string[];
 }
 
-// ── Flow install-from-registry + dependency install ──────────────────────────
-
-/** Dependency report from installing a flow (`install_flow`). */
-export interface DependencyReport {
-  required_packs: string[];
-  missing_packs: string[];
-  version_conflicts: string[];
-  required_tools: string[];
-  required_personas: string[];
-  missing_personas: string[];
-  required_env: string[];
-}
-
-export interface InstalledFlow {
-  id: string;
-  name: string;
-  node_count: number;
-  enabled: boolean;
-}
-
-export interface InstallResult {
-  flow: InstalledFlow;
-  dependencies: DependencyReport;
-}
-
-/** One pack-install outcome from `install_flow_dependencies`. */
-export interface PackInstallOutcome {
-  pack: string;
-  version?: string | null;
-  status: string; // installed | already-satisfied | skipped | failed
-  detail?: string | null;
-}
-
-export interface InstallFlowDependenciesResult {
-  flow: string;
-  packs: PackInstallOutcome[];
-}
-
-// ── Packs: uninstall + lockfile ──────────────────────────────────────────────
-
-/** `dependent_flows` / `dependent_personas` still referencing an uninstalled pack. */
-export interface UninstallPackResult {
-  dependent_flows: string[];
-  dependent_personas: string[];
-}
-
-/** One pinned entry in the agent's `metalcraft.lock`. */
-export interface LockEntry {
-  name: string;
-  version: string;
-  content_sha256: string;
-  source: string;
-}
-
-export interface Lock {
-  version: number;
-  packs: LockEntry[];
-  flows: LockEntry[];
-}
-
-/** One reinstall outcome from `restore_lockfile`. */
-export interface RestoreOutcome {
-  kind: string; // "pack" | "flow"
-  name: string;
-  version: string;
-  status: string; // "installed" | "failed"
-  detail?: string | null;
-}
-
-export interface RestoreLockfileResult {
-  outcomes: RestoreOutcome[];
-}
+// ── Flow install + pack/lockfile shapes — aliased from the generated schemas ──
+// The agent publishes `ToSchema` for all of these, so they track the pod. (The
+// pre-existing `RunFlowResult`/`FlowRun`/`FlowStep` above stay hand-typed: the
+// editor reads v1 and v2 fields off one merged value, which a `oneOf` union
+// wouldn't allow without extra narrowing.)
+export type DependencyReport = S["DependencyReport"];
+export type InstalledFlow = S["InstalledFlow"];
+export type InstallResult = S["InstallResult"];
+export type PackInstallOutcome = S["PackInstallOutcome"];
+export type InstallFlowDependenciesResult = S["InstallDependenciesResponse"];
+export type UninstallPackResult = S["UninstallPackResult"];
+export type LockEntry = S["LockEntry"];
+export type Lock = S["Lock"];
+export type RestoreOutcome = S["RestoreOutcome"];
+export type RestoreLockfileResult = S["RestoreResult"];
 
 export interface FlowRunPause {
   reason: string; // "approval" | "wait"

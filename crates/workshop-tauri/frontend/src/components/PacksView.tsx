@@ -226,7 +226,7 @@ function LockfilePanel() {
     }
   };
 
-  const count = (lock?.packs.length ?? 0) + (lock?.flows.length ?? 0);
+  const count = (lock?.packs?.length ?? 0) + (lock?.flows?.length ?? 0);
 
   return (
     <div className="mt-3 bg-surface-1 border border-surface-3 rounded p-4">
@@ -273,7 +273,7 @@ function LockfilePanel() {
 }
 
 function LockGroup({ title, entries }: { title: string; entries: Lock["packs"] }) {
-  if (entries.length === 0) return null;
+  if (!entries || entries.length === 0) return null;
   return (
     <div>
       <h4 className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">{title}</h4>
