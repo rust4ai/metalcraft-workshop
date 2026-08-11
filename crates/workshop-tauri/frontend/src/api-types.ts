@@ -36,6 +36,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all channels — the built-in `metalcraft` default first, then custom
+         *     channels. Secrets are never included.
+         */
+        get: operations["list_channels"];
+        put?: never;
+        /**
+         * Add a custom channel (its own gateway url + secret). The `metalcraft` slug is
+         *     reserved for the built-in channel.
+         */
+        post: operations["create_channel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/channels/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a custom channel. The built-in `metalcraft` channel can't be edited. */
+        put: operations["update_channel"];
+        post?: never;
+        /**
+         * Delete a custom channel and its secret. The built-in `metalcraft` channel
+         *     can't be deleted.
+         */
+        delete: operations["delete_channel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/channels/{slug}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Recent activity for a single channel (by slug), newest first. */
+        get: operations["list_channel_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chats": {
         parameters: {
             query?: never;
@@ -787,6 +849,19 @@ export interface components {
             pack_id?: string | null;
             read_only?: boolean;
         };
+        /**
+         * @description A channel as surfaced to callers/UI: a named connection. `managed` marks the
+         *     built-in `metalcraft` channel (secret is the pod token; not user-editable).
+         *     The secret value itself is never included here.
+         */
+        Channel: {
+            enabled?: boolean;
+            /** @description True only for the built-in `metalcraft` channel. */
+            managed?: boolean;
+            name: string;
+            slug: string;
+            url: string;
+        };
         /** @description A user-created configuration of a [`ChannelType`]. */
         ChannelInstance: {
             created_at?: string | null;
@@ -930,6 +1005,12 @@ export interface components {
         };
         ChatTurnRequest: {
             message: string;
+        };
+        CreateChannelRequest: {
+            name: string;
+            secret: string;
+            slug?: string | null;
+            url: string;
         };
         CreateChatRequest: {
             model_name?: string | null;
@@ -1461,8 +1542,10 @@ export interface components {
             inputs?: unknown;
             model_name?: string | null;
             /**
-             * @description Persona to run the flow's prompts as. Defaults to `coding-agent` if
-             *     the caller doesn't specify one.
+             * @description Optional persona override. A v2 flow owns its persona via the entry node,
+             *     so this is normally omitted and left to the flow. It is only a fallback for
+             *     a flow that declares none (and for legacy v1 flows). Prompt nodes that
+             *     declare their own persona override it regardless.
              */
             persona_slug?: string | null;
         };
@@ -1524,6 +1607,13 @@ export interface components {
             dependent_flows: string[];
             /** @description Surviving personas that still declare the removed pack in their `packs` list. */
             dependent_personas: string[];
+        };
+        UpdateChannelRequest: {
+            enabled?: boolean;
+            name: string;
+            /** @description New secret; omit or leave empty to keep the existing one. */
+            secret?: string | null;
+            url: string;
         };
         UpdateGatewayChannelRequest: {
             enabled?: boolean;
@@ -1633,6 +1723,141 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_channels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"][];
+                };
+            };
+        };
+    };
+    create_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChannelRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChannelRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_channel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_channel_events: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Channel slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayEvent"][];
+                };
             };
         };
     };

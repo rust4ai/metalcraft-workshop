@@ -1,43 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
 import { GatewayEventList } from "./GatewayEvents";
 import type {
-  GatewayChannel,
+  Channel,
   GatewayEvent,
-  GatewaySettingField,
-  GatewayType,
-  KeyEntry,
   MetalcraftGatewayStatus,
   ProjectSnapshot,
 } from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
-  /// Base URL of the active remote connection, used to render the exact inbound
-  /// webhook URL the user must paste into the upstream platform. Null in local
-  /// mode (gateway channels aren't shown there anyway).
+  /// Base URL of the active remote connection (unused by the channels view;
+  /// kept for the tab's prop contract).
   remoteBaseUrl: string | null;
+  /// The expanded channel slug (drives the activity panel), via the app's shared
+  /// selection state.
   selectedId: string | null;
   onSelect: (id: string | null) => void;
-  /// Jump to the Keys tab, optionally focused on a key name (to add/rotate it).
   onGoToKeys: (name: string) => void;
 }
 
-// Adapters that receive inbound traffic at `<agent>/webhook/<adapter>` and so
-// need the user to register that URL upstream. Keep in sync with the daemon's
-// inbound webhook routes (workshop_api.rs).
-const INBOUND_WEBHOOK_ADAPTERS = new Set(["pipestreamr", "twilio"]);
-
-export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSelect, onGoToKeys }: Props) {
+/// The Gateway tab. A **channel is a connection** to a gateway
+/// (`{ slug, name, url }`). The built-in `metalcraft` channel is always present
+/// and read-only (its secret is the pod token); users add custom channels with
+/// their own url + secret. Expanding a channel shows its recent activity,
+/// labelled by delivery kind — no transport/protocol names.
+export default function GatewayView({ snapshot, selectedId, onSelect }: Props) {
   const reportError = useReportError();
-  const [types, setTypes] = useState<GatewayType[] | null>(null);
-  const [channels, setChannels] = useState<GatewayChannel[] | null>(null);
-  // Live set of configured key names — fetched here (not read from the load-time
-  // snapshot) so a key added in the Keys tab reflects as ✓ on next tab entry.
-  const [keyNames, setKeyNames] = useState<Set<string>>(new Set());
-  // Live status for a connected Metalcraft Gateway channel (the persistent chip).
-  const [mgStatus, setMgStatus] = useState<MetalcraftGatewayStatus | null>(null);
+  const [channels, setChannels] = useState<Channel[] | null>(null);
+  const [mg, setMg] = useState<MetalcraftGatewayStatus | null>(null);
+  const [adding, setAdding] = useState(false);
 
   // Gateway state lives on the agent — local mode has nothing to show.
   if (snapshot.mode !== "remote") {
@@ -45,14 +38,12 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
       <div className="h-full flex items-center justify-center p-6 text-center">
         <div className="max-w-md text-sm text-gray-400">
           <p className="mb-2">
-            Gateway channels are managed by the agent process and are only
-            visible when connected to a remote agent.
+            Channels are managed by the agent process and are only visible when
+            connected to a remote agent.
           </p>
           <p className="text-xs text-gray-500">
             Start the agent with{" "}
-            <code className="text-accent-light">
-              metalcraft-daemon --api &lt;KEY&gt;
-            </code>{" "}
+            <code className="text-accent-light">metalcraft-daemon --api &lt;KEY&gt;</code>{" "}
             and connect via the Remote tab.
           </p>
         </div>
@@ -60,968 +51,286 @@ export default function GatewayView({ snapshot, remoteBaseUrl, selectedId, onSel
     );
   }
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
-      const [t, c, k] = await Promise.all([
-        invoke<GatewayType[]>("list_gateway_types"),
-        invoke<GatewayChannel[]>("list_gateway_channels"),
-        invoke<KeyEntry[]>("list_keys"),
-      ]);
-      setTypes(t);
+      const c = await invoke<Channel[]>("list_channels");
       setChannels(c);
-      // Required-env keys are account-wide, so only global-scope keys count as
-      // "configured" — channel secrets share short names (API_KEY, …) that must
-      // not falsely satisfy a type's requires_env.
-      setKeyNames(new Set(k.filter((key) => key.scope === "global").map((key) => key.name)));
-      // If a provisioner-backed channel exists, refresh its live status for the chip.
-      const hasProvisioner = c.some((ch) => {
-        const ty = t.find((x) => x.id === ch.type_id);
-        return ty?.provisioner === "metalcraft-gateway";
-      });
-      if (hasProvisioner) {
-        invoke<MetalcraftGatewayStatus>("gateway_metalcraft_status")
-          .then(setMgStatus)
-          .catch(() => setMgStatus(null));
-      } else {
-        setMgStatus(null);
-      }
+      invoke<MetalcraftGatewayStatus>("gateway_metalcraft_status")
+        .then(setMg)
+        .catch(() => setMg(null));
     } catch (e) {
-      reportError("list_gateway_channels", e);
+      reportError("list_channels", e);
     }
-  };
+  }, [reportError]);
 
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refresh]);
 
-  if (!types || !channels) {
-    return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
+  if (channels === null) {
+    return <div className="p-6 text-sm text-gray-500">Loading gateway…</div>;
   }
 
-  // Create form.
-  if (selectedId === "__new__") {
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 overflow-y-auto p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-gray-400">Channels</h3>
+        {!adding && (
+          <button
+            className="px-2.5 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
+            onClick={() => setAdding(true)}
+          >
+            + Add channel
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <ChannelForm
+          onCancel={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            void refresh();
+          }}
+        />
+      )}
+
+      <div className="space-y-2">
+        {channels.map((c) => (
+          <ChannelRow
+            key={c.slug}
+            channel={c}
+            mg={mg}
+            expanded={selectedId === c.slug}
+            onToggle={() => onSelect(selectedId === c.slug ? null : c.slug)}
+            onChanged={refresh}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/// One channel: name/url + status, expandable to its activity. `metalcraft` is
+/// read-only (built-in) and surfaces inbound status; custom channels can be
+/// edited or removed.
+function ChannelRow({
+  channel,
+  mg,
+  expanded,
+  onToggle,
+  onChanged,
+}: {
+  channel: Channel;
+  mg: MetalcraftGatewayStatus | null;
+  expanded: boolean;
+  onToggle: () => void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const reportError = useReportError();
+  const [editing, setEditing] = useState(false);
+  const [events, setEvents] = useState<GatewayEvent[] | null>(null);
+
+  useEffect(() => {
+    if (expanded && events === null) {
+      invoke<GatewayEvent[]>("channel_events", { slug: channel.slug })
+        .then(setEvents)
+        .catch((e) => {
+          reportError("channel_events", e);
+          setEvents([]);
+        });
+    }
+  }, [expanded, events, channel.slug, reportError]);
+
+  const remove = useCallback(async () => {
+    if (!confirm(`Remove channel “${channel.name}”?`)) return;
+    try {
+      await invoke("delete_channel", { slug: channel.slug });
+      await onChanged();
+    } catch (e) {
+      reportError("delete_channel", e);
+    }
+  }, [channel, onChanged, reportError]);
+
+  if (editing) {
     return (
       <ChannelForm
-        mode="new"
-        types={types}
-        channel={null}
-        snapshot={snapshot}
-        remoteBaseUrl={remoteBaseUrl}
-        configuredKeys={keyNames}
-        onGoToKeys={onGoToKeys}
-        onSaved={() => {
-          refresh();
-          onSelect(null);
+        channel={channel}
+        onCancel={() => setEditing(false)}
+        onSaved={async () => {
+          setEditing(false);
+          await onChanged();
         }}
-        onCancel={() => onSelect(null)}
       />
     );
   }
 
-  // Edit form for an existing channel.
-  if (selectedId) {
-    const channel = channels.find((c) => c.id === selectedId);
-    if (channel) {
-      return (
-        <ChannelForm
-          mode="edit"
-          types={types}
-          channel={channel}
-          snapshot={snapshot}
-          remoteBaseUrl={remoteBaseUrl}
-          configuredKeys={keyNames}
-          onGoToKeys={onGoToKeys}
-          onSaved={() => {
-            refresh();
-          }}
-          onCancel={() => onSelect(null)}
-        />
-      );
-    }
-  }
-
-  // List view.
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-3xl space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-accent">Gateway channels</h2>
-          <button
-            onClick={() => onSelect("__new__")}
-            className="px-2 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded"
-          >
-            + New channel
-          </button>
-        </div>
-        <p className="text-xs text-gray-500">
-          A channel connects a messaging platform (WhatsApp via Twilio today) to
-          a persona. Inbound messages run the channel's persona; replies are sent
-          back over the same platform. Secrets live in the Keys tab.
-        </p>
-        {channels.length === 0 ? (
-          <div className="text-sm text-gray-500 italic">
-            No channels configured. Click “+ New channel” to add one.
+    <div className="bg-surface-1 border border-surface-3 rounded overflow-hidden">
+      <div className="flex items-center gap-3 p-3.5">
+        <button className="min-w-0 flex-1 text-left" onClick={onToggle}>
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-block h-2 w-2 shrink-0 rounded-full ${channel.enabled === false ? "bg-gray-600" : "bg-green-400"}`}
+            />
+            <span className="truncate text-sm font-medium text-gray-200">{channel.name}</span>
+            {channel.managed ? (
+              <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-green-900/40 text-green-300 rounded">
+                built-in
+              </span>
+            ) : channel.enabled === false ? (
+              <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface-2 text-gray-400 rounded">
+                disabled
+              </span>
+            ) : null}
           </div>
-        ) : (
-          <ul className="space-y-2">
-            {channels.map((c) => {
-              const type = types.find((t) => t.id === c.type_id);
-              return (
-                <li
-                  key={c.id}
-                  className="bg-surface-1 border border-surface-3 rounded p-4 flex items-start gap-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onSelect(c.id)}
-                        className="text-sm font-medium text-gray-200 hover:text-accent-light text-left"
-                      >
-                        {c.name}
-                      </button>
-                      <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface-2 text-gray-400 rounded font-mono">
-                        {type?.name ?? c.type_id}
-                      </span>
-                      {c.enabled && (
-                        <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-green-900/40 text-green-300 rounded">
-                          Enabled
-                        </span>
-                      )}
-                      {type?.provisioner === "metalcraft-gateway" && <MgStatusChip status={mgStatus} />}
-                    </div>
-                    {c.settings?.from && (
-                      <p className="text-xs text-gray-500 mt-1 font-mono">
-                        {c.settings.from}
-                        {c.settings.persona ? ` · ${c.settings.persona}` : ""}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <ChannelToggle
-                      channelId={c.id}
-                      enabled={c.enabled ?? false}
-                      onChanged={refresh}
-                    />
-                    <ChannelDelete
-                      channelId={c.id}
-                      channelName={c.name}
-                      onDeleted={refresh}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="mt-0.5 truncate text-[11px] font-mono text-gray-500">
+            {channel.slug} · {channel.url}
+          </div>
+          {channel.managed && (
+            <div className="mt-0.5 text-[11px] text-gray-500">{metalcraftStatusLabel(mg)}</div>
+          )}
+        </button>
+        {!channel.managed && (
+          <div className="flex shrink-0 gap-1">
+            <button
+              className="px-2 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+            <button
+              className="px-2 py-1 text-xs bg-red-900/30 hover:bg-red-900/50 text-red-300 rounded"
+              onClick={remove}
+            >
+              Remove
+            </button>
+          </div>
         )}
       </div>
-    </div>
-  );
-}
 
-function ChannelToggle({
-  channelId,
-  enabled,
-  onChanged,
-}: {
-  channelId: string;
-  enabled: boolean;
-  onChanged: () => void;
-}) {
-  const reportError = useReportError();
-  const [pending, setPending] = useState(false);
-  const toggle = async () => {
-    setPending(true);
-    try {
-      await invoke("set_gateway_channel_enabled", { id: channelId, enabled: !enabled });
-      onChanged();
-    } catch (e) {
-      reportError("set_gateway_channel_enabled", e);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <button
-      onClick={toggle}
-      disabled={pending}
-      className={`px-3 py-1.5 text-xs rounded font-medium disabled:opacity-40 ${
-        enabled
-          ? "bg-red-900/40 hover:bg-red-900/60 text-red-200"
-          : "bg-accent hover:bg-accent-light text-white"
-      }`}
-    >
-      {pending ? "…" : enabled ? "Disable" : "Enable"}
-    </button>
-  );
-}
-
-/// Per-row delete for a channel. Lives on the list so every channel type is
-/// deletable — including provisioner-backed ones whose edit view swaps the
-/// settings form (and its Delete button) for the Connect panel.
-function ChannelDelete({
-  channelId,
-  channelName,
-  onDeleted,
-}: {
-  channelId: string;
-  channelName: string;
-  onDeleted: () => void;
-}) {
-  const reportError = useReportError();
-  const [pending, setPending] = useState(false);
-  const remove = async () => {
-    if (!confirm(`Delete channel "${channelName}"?`)) return;
-    setPending(true);
-    try {
-      await invoke("delete_gateway_channel", { id: channelId });
-      onDeleted();
-    } catch (e) {
-      reportError("delete_gateway_channel", e);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <button
-      onClick={remove}
-      disabled={pending}
-      title="Delete channel"
-      className="px-2 py-1.5 text-xs rounded font-medium text-red-300 hover:bg-red-900/40 disabled:opacity-40"
-    >
-      {pending ? "…" : "Delete"}
-    </button>
-  );
-}
-
-// Shows the exact URL the user must register on the upstream platform (e.g. a
-// PipeStreamr project webhook) so inbound messages reach this agent. When the
-// connection base URL is known we render the real URL; otherwise a template the
-// user fills in with their public agent domain.
-function InboundWebhookCallout({
-  adapter,
-  baseUrl,
-}: {
-  adapter: string;
-  baseUrl: string | null;
-}) {
-  const [copied, setCopied] = useState(false);
-  const root = baseUrl?.replace(/\/+$/, "");
-  const url = `${root ?? "https://<your-agent-domain>"}/webhook/${adapter}`;
-  const copyable = !!root;
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard can be unavailable; the URL is selectable as a fallback.
-    }
-  };
-
-  return (
-    <div className="rounded border border-accent/30 bg-accent/5 p-3 space-y-1.5">
-      <p className="text-xs font-medium text-accent-light">Inbound webhook URL</p>
-      <p className="text-[11px] text-gray-400">
-        Register this URL on the upstream platform (e.g. your PipeStreamr project
-        webhook, event <span className="font-mono">message.created</span>) so its
-        messages reach this agent.
-      </p>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 min-w-0 truncate px-2 py-1.5 bg-surface-1 border border-surface-3 rounded text-[11px] font-mono text-gray-200">
-          {url}
-        </code>
-        {copyable && (
-          <button
-            onClick={copy}
-            className="shrink-0 px-2 py-1.5 text-[11px] bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
-        )}
-      </div>
-      {!copyable && (
-        <p className="text-[11px] text-gray-500">
-          Replace <span className="font-mono">&lt;your-agent-domain&gt;</span>{" "}
-          with your agent's public domain.
-        </p>
+      {expanded && (
+        <div className="border-t border-surface-3 p-3">
+          {events === null ? (
+            <div className="text-sm text-gray-500 py-3 text-center">Loading activity…</div>
+          ) : (
+            <GatewayEventList events={events.slice(0, 30)} />
+          )}
+        </div>
       )}
     </div>
   );
 }
 
+/// Add or edit a custom channel.
 function ChannelForm({
-  mode,
-  types,
   channel,
-  snapshot,
-  remoteBaseUrl,
-  configuredKeys,
-  onGoToKeys,
-  onSaved,
   onCancel,
+  onSaved,
 }: {
-  mode: "new" | "edit";
-  types: GatewayType[];
-  channel: GatewayChannel | null;
-  snapshot: ProjectSnapshot;
-  remoteBaseUrl: string | null;
-  configuredKeys: Set<string>;
-  onGoToKeys: (name: string) => void;
-  onSaved: () => void;
+  channel?: Channel;
   onCancel: () => void;
+  onSaved: () => Promise<void> | void;
 }) {
   const reportError = useReportError();
-  const [typeId, setTypeId] = useState(channel?.type_id ?? types[0]?.id ?? "");
+  const editing = !!channel;
   const [name, setName] = useState(channel?.name ?? "");
-  const [settings, setSettings] = useState<Record<string, string>>(
-    channel?.settings ?? {},
-  );
-  // Write-only drafts for secret fields (values never come back from the agent);
-  // a non-empty draft is saved to the channel's secret scope on save/rotation.
-  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({});
-  // Names of this channel's secrets already configured (edit mode) — for the ✓.
-  const [configuredSecrets, setConfiguredSecrets] = useState<Set<string>>(new Set());
-  const [enabled, setEnabled] = useState(channel?.enabled ?? false);
-  const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"settings" | "events">("settings");
-
-  const type = useMemo(() => types.find((t) => t.id === typeId), [types, typeId]);
-  const secretFields = useMemo(
-    () => (type?.settings ?? []).filter((f) => f.secret),
-    [type],
-  );
-
-  const setField = (key: string, value: string) =>
-    setSettings((s) => ({ ...s, [key]: value }));
-  const setSecret = (key: string, value: string) =>
-    setSecretDrafts((s) => ({ ...s, [key]: value }));
-
-  // Which secret fields already have a stored value for this channel.
-  useEffect(() => {
-    if (mode !== "edit" || !channel) return;
-    invoke<KeyEntry[]>("list_keys")
-      .then((ks) =>
-        setConfiguredSecrets(
-          new Set(
-            ks
-              .filter((k) => k.scope === "channel" && k.channel_id === channel.id)
-              .map((k) => k.name),
-          ),
-        ),
-      )
-      .catch((e) => reportError("list_keys", e));
-  }, [mode, channel, reportError]);
-
-  // Persist any entered secret drafts to the channel's secret scope.
-  const saveSecrets = async (channelId: string) => {
-    for (const f of secretFields) {
-      const v = secretDrafts[f.key];
-      if (v && v.trim()) {
-        await invoke("save_key", { name: f.key, value: v, channelId });
-      }
-    }
-  };
-
-  const save = async () => {
-    if (!name.trim() || !typeId) return;
-    setSaving(true);
-    try {
-      // Secret fields live in the channel's secret scope, never in `settings`.
-      const settingsToSave = Object.fromEntries(
-        Object.entries(settings).filter(
-          ([k]) => !secretFields.some((f) => f.key === k),
-        ),
-      );
-      if (mode === "new") {
-        const created = await invoke<GatewayChannel>("create_gateway_channel", {
-          typeId,
-          name: name.trim(),
-          settings: settingsToSave,
-        });
-        await saveSecrets(created.id);
-      } else if (channel) {
-        await invoke("update_gateway_channel", {
-          id: channel.id,
-          name: name.trim(),
-          enabled,
-          settings: settingsToSave,
-        });
-        await saveSecrets(channel.id);
-      }
-      onSaved();
-    } catch (e) {
-      reportError(mode === "new" ? "create_gateway_channel" : "update_gateway_channel", e);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async () => {
-    if (!channel || !confirm(`Delete channel "${channel.name}"?`)) return;
-    try {
-      await invoke("delete_gateway_channel", { id: channel.id });
-      onCancel();
-    } catch (e) {
-      reportError("delete_gateway_channel", e);
-    }
-  };
-
-  return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-2xl space-y-4">
-        <button onClick={onCancel} className="text-xs text-gray-500 hover:text-gray-300">
-          ← back to channels
-        </button>
-        <h2 className="text-lg font-semibold text-accent">
-          {mode === "new" ? "New gateway channel" : channel?.name}
-        </h2>
-
-        {mode === "edit" && (
-          <div className="flex gap-1 border-b border-surface-3 -mt-1">
-            {(["settings", "events"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-3 py-1.5 text-xs border-b-2 -mb-px ${
-                  tab === t
-                    ? "border-accent text-accent-light"
-                    : "border-transparent text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                {t === "settings" ? "Settings" : "Events"}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {mode === "edit" && tab === "events" && channel && (
-          <ChannelEventsTab channelId={channel.id} />
-        )}
-
-        {(mode === "new" || tab === "settings") && (
-          <>
-        {mode === "new" ? (
-          <Field label="Channel type">
-            <select
-              value={typeId}
-              onChange={(e) => {
-                setTypeId(e.target.value);
-                setSettings({});
-              }}
-              className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded text-sm"
-            >
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : (
-          <div className="text-xs text-gray-500">
-            Type: <span className="font-mono text-gray-300">{type?.name ?? typeId}</span>
-          </div>
-        )}
-
-        {type && <p className="text-xs text-gray-500">{type.description}</p>}
-
-        {type && INBOUND_WEBHOOK_ADAPTERS.has(type.adapter) && !type.provisioner && (
-          <InboundWebhookCallout adapter={type.adapter} baseUrl={remoteBaseUrl} />
-        )}
-
-        {type?.provisioner === "metalcraft-gateway" && (
-          <MetalcraftGatewayConnect
-            remoteBaseUrl={remoteBaseUrl}
-            onDone={() => {
-              onSaved();
-              onCancel();
-            }}
-          />
-        )}
-
-        {!type?.provisioner && (
-          <>
-        <Field label="Name">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Support line"
-            className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded text-sm"
-          />
-        </Field>
-
-        {(type?.settings ?? [])
-          .filter((field) => !field.secret)
-          .map((field) => (
-            <SettingInput
-              key={field.key}
-              field={field}
-              value={settings[field.key] ?? ""}
-              personas={snapshot.personas.map((p) => p.slug)}
-              onChange={(v) => setField(field.key, v)}
-            />
-          ))}
-
-        {secretFields.length > 0 && (
-          <ChannelSecretFields
-            fields={secretFields}
-            drafts={secretDrafts}
-            configured={configuredSecrets}
-            onChange={setSecret}
-          />
-        )}
-
-        {type && (type.requires_env?.length ?? 0) > 0 && (
-          <RequiredKeys
-            keys={type.requires_env ?? []}
-            configured={configuredKeys}
-            onGoToKeys={onGoToKeys}
-            clickable={mode === "edit"}
-          />
-        )}
-
-        <div className="flex items-center gap-3 pt-4 border-t border-surface-3">
-          <button
-            onClick={save}
-            disabled={saving || !name.trim() || !typeId}
-            className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
-          >
-            {saving ? "Saving…" : mode === "new" ? "Create channel" : "Save"}
-          </button>
-          {mode === "edit" && (
-            <>
-              <label className="flex items-center gap-2 text-xs text-gray-400">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                />
-                Enabled
-              </label>
-              <div className="flex-1" />
-              <button
-                onClick={remove}
-                className="px-4 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded text-sm"
-              >
-                Delete
-              </button>
-            </>
-          )}
-        </div>
-        {mode === "new" && (
-          <p className="text-[11px] text-gray-500">
-            New channels start disabled. Configure its keys, then enable it from
-            the channel list (or the toggle here after saving).
-          </p>
-        )}
-          </>
-        )}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/// Persistent chip on a connected Metalcraft Gateway channel's row: at-a-glance
-/// health (green connected / amber setup needed / red attention).
-function MgStatusChip({ status }: { status: MetalcraftGatewayStatus | null }) {
-  let cls = "bg-gray-700/50 text-gray-400";
-  let label = "checking…";
-  if (status) {
-    if (status.connected && status.streaming) {
-      // Pull mode, long-poll live: we *know* inbound is flowing.
-      cls = "bg-emerald-900/40 text-emerald-300";
-      label = "receiving";
-    } else if (status.connected && status.webhook_stale) {
-      // Push-mode drift (stale webhook) — self-healing.
-      cls = "bg-amber-900/40 text-amber-300";
-      label = "reconnecting";
-    } else if (status.connected) {
-      cls = "bg-emerald-900/40 text-emerald-300";
-      label = "connected";
-    } else if (!status.configured || status.error) {
-      cls = "bg-red-900/40 text-red-300";
-      label = "attention";
-    } else if (!status.registered) {
-      cls = "bg-amber-900/40 text-amber-300";
-      label = "register";
-    } else if (!status.verified) {
-      cls = "bg-amber-900/40 text-amber-300";
-      label = "verify";
-    } else {
-      cls = "bg-amber-900/40 text-amber-300";
-      label = "connect";
-    }
-  }
-  return (
-    <span className={`px-1.5 py-0.5 text-[10px] uppercase tracking-wide rounded ${cls}`}>{label}</span>
-  );
-}
-
-/// The Metalcraft Gateway "Connect" panel — zero-copy. Reads the pod's link status,
-/// walks the one-time phone register + verify, then connects (which fetches config,
-/// wires the webhook, and enables the channel) with a single click.
-function MetalcraftGatewayConnect({
-  onDone,
-  remoteBaseUrl,
-}: {
-  onDone: () => void;
-  remoteBaseUrl: string | null;
-}) {
-  const reportError = useReportError();
-  const [status, setStatus] = useState<MetalcraftGatewayStatus | null>(null);
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState<string | null>(null);
+  const [url, setUrl] = useState(channel?.url ?? "");
+  const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setErr(null);
-    try {
-      setStatus(await invoke<MetalcraftGatewayStatus>("gateway_metalcraft_status"));
-    } catch (e) {
-      setErr(String(e));
-    }
-  }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
+  const canSave = name.trim() && url.trim() && (editing || secret.trim());
 
-  const run = async (fn: () => Promise<void>) => {
+  const save = useCallback(async () => {
+    if (!canSave || busy) return;
     setBusy(true);
-    setErr(null);
     try {
-      await fn();
+      if (editing) {
+        await invoke("update_channel", {
+          slug: channel!.slug,
+          name: name.trim(),
+          url: url.trim(),
+          enabled: channel!.enabled ?? true,
+          secret: secret.trim() || null,
+        });
+      } else {
+        await invoke("create_channel", { name: name.trim(), url: url.trim(), secret: secret.trim() });
+      }
+      await onSaved();
     } catch (e) {
-      setErr(String(e));
-      reportError("metalcraft_gateway", e);
+      reportError(editing ? "update_channel" : "create_channel", e);
     } finally {
       setBusy(false);
     }
-  };
-
-  const register = () =>
-    run(async () => {
-      const r = await invoke<{ verify_code?: string }>("gateway_metalcraft_register", {
-        phoneNumber: phone.trim(),
-      });
-      setCode(r.verify_code ?? null);
-      await load();
-    });
-  const connect = () =>
-    run(async () => {
-      // Pass the URL the workshop already uses to reach this pod as a fallback, so
-      // Connect works even when POD_PUBLIC_URL isn't injected into the pod env.
-      await invoke("gateway_metalcraft_connect", { webhookBase: remoteBaseUrl ?? null });
-      await load();
-      onDone();
-    });
-
-  if (!status) return <div className="text-xs text-gray-500">Loading…</div>;
-
-  const box = "rounded border border-surface-3 bg-surface-1 p-4 space-y-3 text-sm";
-  const num = status.active_number ?? "the gateway number";
+  }, [canSave, busy, editing, channel, name, url, secret, onSaved, reportError]);
 
   return (
-    <div className={box}>
-      {err && <div className="text-xs text-red-300">{err}</div>}
-
-      {!status.configured ? (
-        <p className="text-gray-400">
-          This pod isn't linked to a Metalcraft ID account (no token).
-          {status.error ? ` (${status.error})` : ""}
-        </p>
-      ) : status.connected ? (
-        <div className="space-y-2">
-          {status.streaming ? (
-            <p className="text-emerald-300">✓ Receiving as {status.active_number}</p>
-          ) : status.webhook_stale ? (
-            <p className="text-amber-300">
-              Connected as {status.active_number} · reconnecting inbound…
-            </p>
-          ) : (
-            <p className="text-emerald-300">✓ Connected as {status.active_number}</p>
-          )}
-          <button
-            onClick={connect}
-            disabled={busy}
-            className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs"
-          >
-            Re-sync
-          </button>
-        </div>
-      ) : !status.registered ? (
-        <div className="space-y-2">
-          <p className="text-gray-400">
-            Register your phone number. You'll verify it once, then connect — no keys to copy.
-          </p>
-          <div className="flex gap-2">
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+15551234567"
-              className="flex-1 px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
-            />
-            <button
-              onClick={register}
-              disabled={busy || !phone.trim()}
-              className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
-            >
-              Register
-            </button>
-          </div>
-        </div>
-      ) : !status.verified ? (
-        <div className="space-y-2">
-          <p className="text-gray-300">
-            To activate, text {code ? <span className="font-mono text-accent-light">{code}</span> : "your code"}{" "}
-            from your phone to <span className="font-mono">{num}</span>.
-          </p>
-          <div className="flex gap-2">
-            <button onClick={load} disabled={busy} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs">
-              I've verified — refresh
-            </button>
-            <button onClick={register} disabled={busy} className="px-3 py-1.5 bg-surface-2 hover:bg-surface-3 rounded text-xs">
-              Resend code
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-gray-300">Verified as {status.active_number}. Ready to connect.</p>
-          <button
-            onClick={connect}
-            disabled={busy}
-            className="px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm disabled:opacity-40"
-          >
-            {busy ? "Connecting…" : "Connect"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/// The "Events" tab on a channel's show page: recent inbound/outbound traffic
-/// that matched this channel. Fetched on mount and on demand via Refresh.
-function ChannelEventsTab({ channelId }: { channelId: string }) {
-  const reportError = useReportError();
-  const [events, setEvents] = useState<GatewayEvent[] | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setEvents(await invoke<GatewayEvent[]>("list_gateway_channel_events", { id: channelId }));
-    } catch (e) {
-      reportError("list_gateway_channel_events", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [channelId, reportError]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-500">
-          Inbound messages and outbound replies for this channel.
-        </p>
+    <div className="bg-surface-1 border border-surface-3 rounded p-3.5 space-y-2">
+      <div className="text-xs font-medium uppercase tracking-wide text-gray-400">
+        {editing ? `Edit ${channel!.slug}` : "New channel"}
+      </div>
+      <Field label="Name" value={name} onChange={setName} placeholder="My gateway" />
+      <Field label="URL" value={url} onChange={setUrl} placeholder="https://gateway.example.com" />
+      <Field
+        label={editing ? "Secret (leave blank to keep)" : "Secret"}
+        value={secret}
+        onChange={setSecret}
+        placeholder="bearer token"
+        type="password"
+      />
+      <div className="flex justify-end gap-2 pt-1">
         <button
-          onClick={load}
-          disabled={loading}
-          className="px-2 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded disabled:opacity-40"
+          className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded disabled:opacity-40"
+          onClick={onCancel}
+          disabled={busy}
         >
-          {loading ? "…" : "Refresh"}
+          Cancel
+        </button>
+        <button
+          className="px-2.5 py-1 text-xs bg-accent hover:bg-accent-light text-white rounded disabled:opacity-40"
+          onClick={save}
+          disabled={!canSave || busy}
+        >
+          {busy ? "Saving…" : editing ? "Save" : "Add"}
         </button>
       </div>
-      {events === null ? (
-        <div className="text-sm text-gray-500">Loading…</div>
-      ) : (
-        <GatewayEventList events={events} />
-      )}
     </div>
   );
 }
 
-/// The channel's own secret fields (e.g. a manual PipeStreamr channel's API key
-/// and webhook secret). Values are write-only — the agent only tells us whether
-/// each is configured, never the value — so an input rotates/sets, and a ✓ marks
-/// an existing secret. Saved to this channel's secret scope (Keys tab › channel).
-function ChannelSecretFields({
-  fields,
-  drafts,
-  configured,
-  onChange,
-}: {
-  fields: GatewaySettingField[];
-  drafts: Record<string, string>;
-  configured: Set<string>;
-  onChange: (key: string, value: string) => void;
-}) {
-  return (
-    <div className="space-y-3 rounded border border-surface-3 bg-surface-1/50 p-3">
-      <div className="flex items-center gap-2">
-        <h3 className="text-xs uppercase tracking-wide text-gray-500">
-          Channel secrets
-        </h3>
-        <span className="text-[10px] text-gray-600">
-          stored under this channel, not as account keys
-        </span>
-      </div>
-      {fields.map((field) => {
-        const isSet = configured.has(field.key);
-        const label = field.required && !isSet ? `${field.label} *` : field.label;
-        return (
-          <Field key={field.key} label={label}>
-            <input
-              type="password"
-              value={drafts[field.key] ?? ""}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => onChange(field.key, e.target.value)}
-              placeholder={
-                isSet ? "•••• configured — enter a value to rotate" : (field.placeholder ?? "")
-              }
-              className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded font-mono text-sm"
-            />
-            {field.help && (
-              <p className="text-[11px] text-gray-500 mt-1">{field.help}</p>
-            )}
-            {isSet && (
-              <p className="text-[11px] text-green-400 mt-1">✓ configured</p>
-            )}
-          </Field>
-        );
-      })}
-    </div>
-  );
-}
-
-function SettingInput({
-  field,
+function Field({
+  label,
   value,
-  personas,
   onChange,
+  placeholder,
+  type = "text",
 }: {
-  field: GatewaySettingField;
+  label: string;
   value: string;
-  personas: string[];
   onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
 }) {
-  const label = field.required ? `${field.label} *` : field.label;
-  return (
-    <Field label={label}>
-      {field.input_type === "persona" ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded text-sm"
-        >
-          <option value="">{field.placeholder ?? "Select a persona…"}</option>
-          {personas.map((slug) => (
-            <option key={slug} value={slug}>
-              {slug}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          type={field.input_type === "password" ? "password" : "text"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={field.placeholder ?? ""}
-          autoComplete="off"
-          spellCheck={false}
-          className="w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded font-mono text-sm"
-        />
-      )}
-      {field.help && <p className="text-[11px] text-gray-500 mt-1">{field.help}</p>}
-    </Field>
-  );
-}
-
-/// The API keys this channel type needs, with configured status pulled from the
-/// stored-keys snapshot. Once the channel exists (`clickable`), unconfigured keys
-/// deep-link to the Keys tab. Before the channel is created the keys are shown but
-/// not clickable — navigating away would wipe the in-progress form.
-function RequiredKeys({
-  keys,
-  configured,
-  onGoToKeys,
-  clickable,
-}: {
-  keys: string[];
-  configured: Set<string>;
-  onGoToKeys: (name: string) => void;
-  clickable: boolean;
-}) {
-  return (
-    <div>
-      <h3 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
-        Required API keys
-      </h3>
-      <ul className="space-y-1.5">
-        {keys.map((k) => {
-          const isSet = configured.has(k);
-          return (
-            <li
-              key={k}
-              className="flex items-center gap-2 px-3 py-2 bg-surface-1 border border-surface-3 rounded"
-            >
-              <span className="font-mono text-sm text-gray-200 truncate">{k}</span>
-              <div className="flex-1" />
-              {isSet ? (
-                clickable ? (
-                  <button
-                    onClick={() => onGoToKeys(k)}
-                    className="text-xs text-green-400 hover:underline whitespace-nowrap"
-                    title="Configured — click to rotate the value"
-                  >
-                    ✓ configured
-                  </button>
-                ) : (
-                  <span className="text-xs text-green-400 whitespace-nowrap">
-                    ✓ configured
-                  </span>
-                )
-              ) : clickable ? (
-                <button
-                  onClick={() => onGoToKeys(k)}
-                  className="px-2 py-1 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded whitespace-nowrap"
-                >
-                  + Add in Keys
-                </button>
-              ) : (
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  not configured
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {!clickable && (
-        <p className="text-[11px] text-gray-500 mt-2">
-          Save this channel first, then add its keys from the Keys tab.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">{label}</span>
-      {children}
+      <span className="text-[11px] text-gray-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="mt-0.5 w-full px-3 py-2 bg-surface-1 border border-surface-3 rounded text-sm"
+      />
     </label>
   );
+}
+
+/// Honest one-liner for the built-in Metalcraft channel's inbound status.
+function metalcraftStatusLabel(mg: MetalcraftGatewayStatus | null): string {
+  if (!mg?.connected) return mg?.registered ? "Inbound: registered, not connected" : "Inbound: not set up";
+  const num = mg.active_number;
+  const suffix = num ? ` · ${num}` : "";
+  if (mg.streaming) return `Inbound: receiving${suffix}`;
+  if (mg.webhook_stale) return `Inbound: reconnecting${suffix}`;
+  return `Inbound: connected${suffix}`;
 }

@@ -17,7 +17,7 @@ use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
-use crate::gateway::{GatewayChannel, GatewayEvent, GatewayType};
+use crate::gateway::{Channel, GatewayChannel, GatewayEvent, GatewayType};
 use crate::integration_packs::{PackDetail, PackSummary};
 use std::collections::HashMap;
 use crate::keys::{self, KeyEntry, KeySummary, RecommendedKey};
@@ -224,6 +224,22 @@ pub trait ProjectConnection: Send + Sync {
     ) -> anyhow::Result<GatewayChannel>;
     async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
     async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()>;
+
+    // Channels — the simple {slug, name, url, secret} connection model. The
+    // built-in `metalcraft` channel is always listed (read-only); customs carry
+    // their own url + secret (secret kept in the agent's scoped key store).
+    async fn list_channels(&self) -> anyhow::Result<Vec<Channel>>;
+    async fn channel_events(&self, slug: &str) -> anyhow::Result<Vec<GatewayEvent>>;
+    async fn create_channel(&self, name: &str, url: &str, secret: &str) -> anyhow::Result<Channel>;
+    async fn update_channel(
+        &self,
+        slug: &str,
+        name: &str,
+        url: &str,
+        enabled: bool,
+        secret: Option<&str>,
+    ) -> anyhow::Result<Channel>;
+    async fn delete_channel(&self, slug: &str) -> anyhow::Result<()>;
 
     // Metalcraft Gateway zero-copy connect (JSON passthrough).
     async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value>;
@@ -463,6 +479,28 @@ impl ProjectConnection for LocalConnection {
     }
     async fn delete_gateway_channel(&self, _id: &str) -> anyhow::Result<()> {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
+    }
+    async fn list_channels(&self) -> anyhow::Result<Vec<Channel>> {
+        Err(chat::not_supported_in_local_mode("Channels"))
+    }
+    async fn channel_events(&self, _slug: &str) -> anyhow::Result<Vec<GatewayEvent>> {
+        Err(chat::not_supported_in_local_mode("Channels"))
+    }
+    async fn create_channel(&self, _name: &str, _url: &str, _secret: &str) -> anyhow::Result<Channel> {
+        Err(chat::not_supported_in_local_mode("Channels"))
+    }
+    async fn update_channel(
+        &self,
+        _slug: &str,
+        _name: &str,
+        _url: &str,
+        _enabled: bool,
+        _secret: Option<&str>,
+    ) -> anyhow::Result<Channel> {
+        Err(chat::not_supported_in_local_mode("Channels"))
+    }
+    async fn delete_channel(&self, _slug: &str) -> anyhow::Result<()> {
+        Err(chat::not_supported_in_local_mode("Channels"))
     }
     async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value> {
         Err(chat::not_supported_in_local_mode("Gateway channels"))
@@ -1345,6 +1383,63 @@ impl ProjectConnection for RemoteConnection {
             "DELETE gateway channel",
         )
         .await?;
+        Ok(())
+    }
+    async fn list_channels(&self) -> anyhow::Result<Vec<Channel>> {
+        let resp = ok_or_err(self.get("/api/v1/channels").send().await?, "GET channels").await?;
+        decode_json(resp, "GET channels").await
+    }
+    async fn channel_events(&self, slug: &str) -> anyhow::Result<Vec<GatewayEvent>> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/channels/{slug}/events")).send().await?,
+            "GET channel events",
+        )
+        .await?;
+        decode_json(resp, "GET channel events").await
+    }
+    async fn create_channel(&self, name: &str, url: &str, secret: &str) -> anyhow::Result<Channel> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            name: &'a str,
+            url: &'a str,
+            secret: &'a str,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/channels").json(&Body { name, url, secret }).send().await?,
+            "POST channel",
+        )
+        .await?;
+        decode_json(resp, "POST channel").await
+    }
+    async fn update_channel(
+        &self,
+        slug: &str,
+        name: &str,
+        url: &str,
+        enabled: bool,
+        secret: Option<&str>,
+    ) -> anyhow::Result<Channel> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            name: &'a str,
+            url: &'a str,
+            enabled: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            secret: Option<&'a str>,
+        }
+        let resp = ok_or_err(
+            self.put(&format!("/api/v1/channels/{slug}"))
+                .json(&Body { name, url, enabled, secret })
+                .send()
+                .await?,
+            "PUT channel",
+        )
+        .await?;
+        decode_json(resp, "PUT channel").await
+    }
+    async fn delete_channel(&self, slug: &str) -> anyhow::Result<()> {
+        ok_or_err(self.delete(&format!("/api/v1/channels/{slug}")).send().await?, "DELETE channel")
+            .await?;
         Ok(())
     }
     async fn gateway_metalcraft_status(&self) -> anyhow::Result<serde_json::Value> {

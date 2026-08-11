@@ -285,6 +285,9 @@ export type MetalcraftGatewayStatus = S["GatewayStatus"];
 
 export type GatewayChannel = S["ChannelInstance"];
 
+/** A channel/connection in the simple model — `{ slug, name, url, enabled, managed }`. */
+export type Channel = S["Channel"];
+
 export type GatewayDirection = "inbound" | "outbound";
 
 export type GatewayOutcome =

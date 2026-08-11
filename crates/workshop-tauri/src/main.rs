@@ -13,7 +13,7 @@ use workshop_api::{
     connection::{LocalConnection, ProjectConnection, RemoteConnection, ScheduledTask},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
-    gateway::{GatewayChannel, GatewayEvent, GatewayType},
+    gateway::{Channel, GatewayChannel, GatewayEvent, GatewayType},
     integration_packs::{PackDetail, PackSummary},
     keys::{KeyEntry, RecommendedKey},
     personas, project, skills,
@@ -959,6 +959,55 @@ async fn delete_gateway_channel(
     conn.delete_gateway_channel(&id).await.map_err(|e| e.to_string())
 }
 
+// ---------- Channels (the simple {slug, name, url, secret} model) ----------
+
+#[tauri::command]
+async fn list_channels(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<Channel>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_channels().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn channel_events(
+    slug: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<GatewayEvent>, String> {
+    let conn = require_connection(&state)?;
+    conn.channel_events(&slug).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_channel(
+    name: String,
+    url: String,
+    secret: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Channel, String> {
+    let conn = require_connection(&state)?;
+    conn.create_channel(&name, &url, &secret).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn update_channel(
+    slug: String,
+    name: String,
+    url: String,
+    enabled: bool,
+    secret: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Channel, String> {
+    let conn = require_connection(&state)?;
+    conn.update_channel(&slug, &name, &url, enabled, secret.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_channel(slug: String, state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_channel(&slug).await.map_err(|e| e.to_string())
+}
+
 // ---------- Metalcraft login (metalcraft-id + k3s pod picker) ----------
 //
 // Third login path: sign in to metalcraft-id via the browser (device flow), list
@@ -1537,6 +1586,11 @@ fn main() {
             update_gateway_channel,
             set_gateway_channel_enabled,
             delete_gateway_channel,
+            list_channels,
+            channel_events,
+            create_channel,
+            update_channel,
+            delete_channel,
             metalcraft_login_start,
             metalcraft_login_poll,
             metalcraft_session,

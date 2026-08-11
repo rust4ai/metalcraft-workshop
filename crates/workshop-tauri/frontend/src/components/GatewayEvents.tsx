@@ -21,6 +21,24 @@ function outcomeStyle(outcome: GatewayOutcome): { cls: string; label: string } {
   }
 }
 
+/// Human label for a delivery kind — never a transport/protocol name.
+function kindLabel(platform: string): string {
+  switch ((platform ?? "").toLowerCase()) {
+    case "apns":
+    case "push":
+      return "APNs";
+    case "whatsapp":
+      return "WhatsApp";
+    case "sms":
+      return "SMS";
+    case "":
+    case "text":
+      return "Text";
+    default:
+      return platform.charAt(0).toUpperCase() + platform.slice(1);
+  }
+}
+
 function formatTs(ts: string): string {
   const d = new Date(ts);
   if (isNaN(d.getTime())) return ts;
@@ -71,8 +89,8 @@ export function GatewayEventList({
               <span className={`px-1.5 py-0.5 text-[10px] rounded ${style.cls}`}>
                 {style.label}
               </span>
-              <span className="px-1.5 py-0.5 text-[10px] bg-surface-2 text-gray-400 rounded font-mono">
-                {e.platform}
+              <span className="px-1.5 py-0.5 text-[10px] bg-surface-2 text-gray-400 rounded">
+                {kindLabel(e.platform)}
               </span>
               {showChannel && (
                 <span className="text-[11px] text-gray-500 truncate">

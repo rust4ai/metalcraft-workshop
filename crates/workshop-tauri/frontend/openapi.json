@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.25.0"
+    "version": "0.26.0"
   },
   "paths": {
     "/api/v1/api-tools": {
@@ -124,6 +124,189 @@
         "responses": {
           "200": {
             "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/channels": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List all channels — the built-in `metalcraft` default first, then custom\nchannels. Secrets are never included.",
+        "operationId": "list_channels",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Channel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Add a custom channel (its own gateway url + secret). The `metalcraft` slug is\nreserved for the built-in channel.",
+        "operationId": "create_channel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/channels/{slug}": {
+      "put": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Update a custom channel. The built-in `metalcraft` channel can't be edited.",
+        "operationId": "update_channel",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Channel slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChannelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Delete a custom channel and its secret. The built-in `metalcraft` channel\ncan't be deleted.",
+        "operationId": "delete_channel",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Channel slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/channels/{slug}/events": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Recent activity for a single channel (by slug), newest first.",
+        "operationId": "list_channel_events",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Channel slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayEvent"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1801,6 +1984,33 @@
           }
         }
       },
+      "Channel": {
+        "type": "object",
+        "description": "A channel as surfaced to callers/UI: a named connection. `managed` marks the\nbuilt-in `metalcraft` channel (secret is the pod token; not user-editable).\nThe secret value itself is never included here.",
+        "required": [
+          "slug",
+          "name",
+          "url"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "True only for the built-in `metalcraft` channel."
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "ChannelInstance": {
         "type": "object",
         "description": "A user-created configuration of a [`ChannelType`].",
@@ -2288,6 +2498,31 @@
         ],
         "properties": {
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateChannelRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "url",
+          "secret"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
             "type": "string"
           }
         }
@@ -3689,7 +3924,7 @@
               "string",
               "null"
             ],
-            "description": "Persona to run the flow's prompts as. Defaults to `coding-agent` if\nthe caller doesn't specify one."
+            "description": "Optional persona override. A v2 flow owns its persona via the entry node,\nso this is normally omitted and left to the flow. It is only a fallback for\na flow that declares none (and for legacy v1 flows). Prompt nodes that\ndeclare their own persona override it regardless."
           }
         }
       },
@@ -3853,6 +4088,31 @@
               "type": "string"
             },
             "description": "Surviving personas that still declare the removed pack in their `packs` list."
+          }
+        }
+      },
+      "UpdateChannelRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New secret; omit or leave empty to keep the existing one."
+          },
+          "url": {
+            "type": "string"
           }
         }
       },
