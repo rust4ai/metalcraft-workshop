@@ -74,8 +74,24 @@ export interface SavedFlow {
   created_at: string;
   updated_at: string;
   enabled: boolean;
+  schedules?: FlowScheduleSpec[];
   requires?: Requires | null;
   flow: FlowDefinition;
+}
+
+/** A flow-level schedule — when the flow runs. Mirrors
+ *  `metalcraft_flows::FlowScheduleSpec`; trigger fields are flattened via `type`. */
+export type ScheduleType = "manual" | "minutes" | "hours" | "cron";
+export interface FlowScheduleSpec {
+  id: string;
+  enabled?: boolean;
+  type: ScheduleType;
+  interval?: number;
+  cron?: string;
+  name?: string | null;
+  timezone?: string | null;
+  inputs?: unknown;
+  persona?: string | null;
 }
 
 export interface DiagnosticsSessionSummary {

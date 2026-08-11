@@ -23,6 +23,7 @@ import V2Node from "./flow/V2Node";
 import type {
   ProjectSnapshot,
   SavedFlow,
+  FlowScheduleSpec,
   FlowNode,
   FlowEdge,
   FlowTemplate,
@@ -33,6 +34,15 @@ import type {
   Requires,
   InstallFlowDependenciesResult,
 } from "../types";
+import {
+  DOW_LABELS,
+  dailyCron,
+  describeCron,
+  fromTimeInput,
+  parseCron,
+  toTimeInput,
+  weeklyCron,
+} from "../cronFriendly";
 
 // Every node type renders through one data-driven component (it picks the right
 // handles per type). Defined at module scope so React Flow doesn't re-register
@@ -351,6 +361,8 @@ export default function FlowsView({ selectedId, onSelect, onGoToSession }: Props
           }}
         />
       )}
+
+      <SchedulesPanel flow={flow} onChange={updateFlow} />
 
       {runResult && (
         <RunResultPanel
@@ -893,6 +905,244 @@ function TypedValueInput({
 
 /** A banner over the editor showing a flow's declared `requires` (packs + tools),
  *  with a one-click "Install dependencies" that installs the missing packs. */
+// ── Schedules: flow-level `schedules[]` (when the flow runs) ─────────────────
+
+type Freq = "daily" | "weekly" | "hours" | "minutes" | "manual" | "custom";
+
+function freqOf(s: FlowScheduleSpec): Freq {
+  if (s.type === "manual") return "manual";
+  if (s.type === "minutes") return "minutes";
+  if (s.type === "hours") return "hours";
+  const p = parseCron(s.cron ?? "");
+  return p.kind === "custom" ? "custom" : p.kind;
+}
+
+function patchForFreq(s: FlowScheduleSpec, freq: Freq): Partial<FlowScheduleSpec> {
+  const p = parseCron(s.cron ?? "");
+  const hour = p.kind !== "custom" ? p.hour : 9;
+  const minute = p.kind !== "custom" ? p.minute : 0;
+  const days = p.kind === "weekly" ? p.days : [2];
+  switch (freq) {
+    case "daily":
+      return { type: "cron", cron: dailyCron(hour, minute), interval: undefined };
+    case "weekly":
+      return { type: "cron", cron: weeklyCron(hour, minute, days), interval: undefined };
+    case "hours":
+      return { type: "hours", interval: s.interval ?? 1, cron: undefined };
+    case "minutes":
+      return { type: "minutes", interval: s.interval ?? 30, cron: undefined };
+    case "manual":
+      return { type: "manual", interval: undefined, cron: undefined };
+    case "custom":
+      return { type: "cron", cron: s.cron ?? dailyCron(9, 0), interval: undefined };
+  }
+}
+
+function scheduleSummary(s: FlowScheduleSpec): string {
+  if (s.type === "manual") return "Manual — runs only when triggered";
+  if (s.type === "minutes") return `Every ${s.interval ?? "?"} minute(s)`;
+  if (s.type === "hours") return `Every ${s.interval ?? "?"} hour(s)`;
+  return describeCron(s.cron ?? "") + (s.timezone ? ` (${s.timezone})` : "");
+}
+
+/** Collapsible editor for a flow's schedules. Edits `flow.schedules` in-memory;
+ *  it's persisted by the editor's existing Save button (save_flow sends the whole
+ *  document, and metalcraft-flows 0.4.0 round-trips `schedules[]`). */
+function SchedulesPanel({
+  flow,
+  onChange,
+}: {
+  flow: SavedFlow;
+  onChange: (patch: Partial<SavedFlow>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rows = flow.schedules ?? [];
+
+  const setRows = (next: FlowScheduleSpec[]) => onChange({ schedules: next });
+  const update = (i: number, patch: Partial<FlowScheduleSpec>) =>
+    setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () =>
+    setRows([
+      ...rows,
+      { id: `schedule-${rows.length + 1}`, enabled: true, type: "cron", cron: dailyCron(9, 0) },
+    ]);
+
+  const label =
+    rows.length === 0
+      ? "no schedules"
+      : rows.map((s) => scheduleSummary(s)).join(" · ");
+
+  return (
+    <div className="border-b border-surface-3 bg-surface-1">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2 text-xs text-gray-300 hover:bg-surface-2"
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <span className="font-medium">Schedules</span>
+        <span className="text-gray-500 truncate">— {label}</span>
+        {!flow.enabled && rows.length > 0 && (
+          <span className="ml-auto text-amber-400">flow disabled — won't fire</span>
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-3 space-y-2">
+          {rows.length === 0 && (
+            <p className="text-xs text-gray-500">
+              A flow can run on several schedules — e.g. daily at 9:00 AM and weekly on Tuesday.
+            </p>
+          )}
+          {rows.map((s, i) => (
+            <SchedulesRow
+              key={i}
+              s={s}
+              onChange={(patch) => update(i, patch)}
+              onRemove={() => setRows(rows.filter((_, j) => j !== i))}
+            />
+          ))}
+          <button
+            onClick={add}
+            className="px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs text-gray-300 hover:bg-surface-3"
+          >
+            + Add schedule
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SchedulesRow({
+  s,
+  onChange,
+  onRemove,
+}: {
+  s: FlowScheduleSpec;
+  onChange: (patch: Partial<FlowScheduleSpec>) => void;
+  onRemove: () => void;
+}) {
+  const freq = freqOf(s);
+  const [advanced, setAdvanced] = useState(freq === "custom");
+  const parsed = parseCron(s.cron ?? "");
+  const time = parsed.kind !== "custom" ? toTimeInput(parsed.hour, parsed.minute) : "09:00";
+  const days = parsed.kind === "weekly" ? parsed.days : [];
+
+  const setTime = (v: string) => {
+    const [h, m] = fromTimeInput(v);
+    onChange({ cron: freq === "weekly" ? weeklyCron(h, m, days) : dailyCron(h, m) });
+  };
+  const toggleDay = (d: number) => {
+    const [h, m] = fromTimeInput(time);
+    const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort((a, b) => a - b);
+    onChange({ cron: weeklyCron(h, m, next.length ? next : [d]) });
+  };
+
+  const fld = "px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs";
+
+  return (
+    <div className="rounded border border-surface-3 bg-surface-2/40 p-2 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1 text-xs text-gray-400">
+          <input
+            type="checkbox"
+            checked={s.enabled !== false}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+          />
+          on
+        </label>
+        <span className="text-xs text-gray-400">Runs</span>
+        <select className={fld} value={freq} onChange={(e) => onChange(patchForFreq(s, e.target.value as Freq))}>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="hours">Every N hours</option>
+          <option value="minutes">Every N minutes</option>
+          <option value="manual">Manually only</option>
+          <option value="custom">Custom (cron)</option>
+        </select>
+        {(freq === "daily" || freq === "weekly") && (
+          <>
+            <span className="text-xs text-gray-400">at</span>
+            <input type="time" className={fld} value={time} onChange={(e) => setTime(e.target.value)} />
+          </>
+        )}
+        {(freq === "minutes" || freq === "hours") && (
+          <>
+            <span className="text-xs text-gray-400">every</span>
+            <input
+              type="number"
+              min={1}
+              className={`${fld} w-16`}
+              value={s.interval ?? 1}
+              onChange={(e) => onChange({ interval: Math.max(1, Number(e.target.value)) })}
+            />
+            <span className="text-xs text-gray-400">{freq === "minutes" ? "min" : "hr"}</span>
+          </>
+        )}
+        <span className="flex-1" />
+        <button onClick={onRemove} className="text-xs text-red-300 hover:text-red-200">
+          Remove
+        </button>
+      </div>
+
+      {freq === "weekly" && (
+        <div className="flex flex-wrap gap-1">
+          {DOW_LABELS.map((label, d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => toggleDay(d)}
+              className={`px-2 py-1 rounded text-xs ${
+                days.includes(d) ? "bg-accent text-white" : "bg-surface-2 border border-surface-3 text-gray-400"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className={`${fld} w-36`}
+          placeholder="Label (optional)"
+          value={s.name ?? ""}
+          onChange={(e) => onChange({ name: e.target.value || null })}
+        />
+        {(freq === "daily" || freq === "weekly" || freq === "custom") && (
+          <input
+            className={`${fld} w-48 font-mono`}
+            placeholder="Timezone e.g. America/Detroit"
+            value={s.timezone ?? ""}
+            onChange={(e) => onChange({ timezone: e.target.value || null })}
+          />
+        )}
+      </div>
+
+      {(freq === "custom" || advanced) && (
+        <input
+          className={`${fld} w-full font-mono`}
+          placeholder="0 0 9 * * *  (sec min hour dom month dow)"
+          value={s.cron ?? ""}
+          onChange={(e) => onChange({ cron: e.target.value })}
+        />
+      )}
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-gray-500">{scheduleSummary(s)}</span>
+        {freq !== "custom" && freq !== "manual" && (
+          <button
+            type="button"
+            className="text-[11px] text-gray-500 underline hover:text-gray-300"
+            onClick={() => setAdvanced((v) => !v)}
+          >
+            {advanced ? "Hide cron" : "Advanced (cron)"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RequiresBanner({
   flowId,
   requires,

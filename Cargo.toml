@@ -22,7 +22,7 @@ futures-util = "0.3"
 async-stream = "0.3"
 bytes = "1"
 
-metalcraft-flows = "0.2.2"
+metalcraft-flows = "0.4.0"
 
 [profile.release]
 strip = true

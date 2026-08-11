@@ -1972,11 +1972,12 @@ dependencies = [
 
 [[package]]
 name = "metalcraft-flows"
-version = "0.2.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b0f2abb1f1ee6e1b11aa7d8fd3cc5d221473d6308eca037647885f452745512"
+checksum = "e92db0095eae35fa1be62d5ad0971bbd2008411ee8553bb1e29a2af72312e487"
 dependencies = [
  "regex",
+ "semver",
  "serde",
  "serde_json",
 ]
