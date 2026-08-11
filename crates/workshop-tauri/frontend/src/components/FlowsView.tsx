@@ -995,9 +995,9 @@ function RunTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // Optional persona/model overrides — blank means "let the agent decide"
-  // (defaults to the coding-agent persona and the configured default model).
-  const [persona, setPersona] = useState("");
+  // Optional model override — blank means "let the agent decide" (the configured
+  // default model). Persona is intentionally not selectable here: each prompt
+  // node runs under its own declared persona, falling back to the agent default.
   const [model, setModel] = useState("");
 
   const missingRequired = names.filter((n) => {
@@ -1014,33 +1014,24 @@ function RunTab({
       if (v !== undefined) out[name] = v;
     }
     onRun(out, {
-      persona_slug: persona.trim() || undefined,
       model_name: model.trim() || undefined,
     });
   };
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="block text-xs text-gray-500 mb-1">Persona</span>
-          <input
-            value={persona}
-            onChange={(e) => setPersona(e.target.value)}
-            placeholder="coding-agent"
-            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
-          />
-        </label>
-        <label className="block">
-          <span className="block text-xs text-gray-500 mb-1">Model</span>
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="default"
-            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
-          />
-        </label>
-      </div>
+      <label className="block">
+        <span className="block text-xs text-gray-500 mb-1">Model</span>
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="default"
+          className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
+        />
+      </label>
+      <p className="text-xs text-gray-500">
+        Each step runs under the persona declared on its prompt node.
+      </p>
       {names.length === 0 ? (
         <p className="text-xs text-gray-500">This flow takes no inputs.</p>
       ) : (
