@@ -17,9 +17,8 @@ use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
-use crate::gateway::{Channel, GatewayChannel, GatewayEvent, GatewayType};
+use crate::gateway::{Channel, GatewayEvent};
 use crate::integration_packs::{PackDetail, PackSummary};
-use std::collections::HashMap;
 use crate::keys::{self, KeyEntry, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
@@ -200,30 +199,9 @@ pub trait ProjectConnection: Send + Sync {
     /// `{ outcomes: [RestoreOutcome] }` as raw JSON.
     async fn restore_lockfile(&self) -> anyhow::Result<serde_json::Value>;
 
-    // Gateway channels — remote-only, like integration packs. Types are
-    // declarative manifests on the agent; instances live in the agent's
-    // `<data>/gateway_channels.json`.
-    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>>;
-    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>>;
-    /// Recent inbound/outbound activity for one channel (newest first).
-    async fn list_gateway_channel_events(&self, id: &str) -> anyhow::Result<Vec<GatewayEvent>>;
-    /// Recent gateway activity across all channels, incl. unrouted inbound.
+    // Gateway activity feed — remote-only. Recent inbound/outbound across all
+    // channels, incl. unrouted inbound.
     async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>>;
-    async fn create_gateway_channel(
-        &self,
-        type_id: &str,
-        name: &str,
-        settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel>;
-    async fn update_gateway_channel(
-        &self,
-        id: &str,
-        name: &str,
-        enabled: bool,
-        settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel>;
-    async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
-    async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()>;
 
     // Channels — the simple {slug, name, url, secret} connection model. The
     // built-in `metalcraft` channel is always listed (read-only); customs carry
@@ -445,40 +423,8 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Lockfile"))
     }
 
-    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn list_gateway_channel_events(&self, _id: &str) -> anyhow::Result<Vec<GatewayEvent>> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
     async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn create_gateway_channel(
-        &self,
-        _type_id: &str,
-        _name: &str,
-        _settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn update_gateway_channel(
-        &self,
-        _id: &str,
-        _name: &str,
-        _enabled: bool,
-        _settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn set_gateway_channel_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
-    }
-    async fn delete_gateway_channel(&self, _id: &str) -> anyhow::Result<()> {
-        Err(chat::not_supported_in_local_mode("Gateway channels"))
+        Err(chat::not_supported_in_local_mode("Gateway activity"))
     }
     async fn list_channels(&self) -> anyhow::Result<Vec<Channel>> {
         Err(chat::not_supported_in_local_mode("Channels"))
@@ -1285,30 +1231,6 @@ impl ProjectConnection for RemoteConnection {
         Ok(resp.json().await?)
     }
 
-    async fn list_gateway_types(&self) -> anyhow::Result<Vec<GatewayType>> {
-        let resp = ok_or_err(
-            self.get("/api/v1/gateway/types").send().await?,
-            "GET gateway types",
-        )
-        .await?;
-        decode_json(resp, "GET gateway types").await
-    }
-    async fn list_gateway_channels(&self) -> anyhow::Result<Vec<GatewayChannel>> {
-        let resp = ok_or_err(
-            self.get("/api/v1/gateway/channels").send().await?,
-            "GET gateway channels",
-        )
-        .await?;
-        decode_json(resp, "GET gateway channels").await
-    }
-    async fn list_gateway_channel_events(&self, id: &str) -> anyhow::Result<Vec<GatewayEvent>> {
-        let resp = ok_or_err(
-            self.get(&format!("/api/v1/gateway/channels/{id}/events")).send().await?,
-            "GET gateway channel events",
-        )
-        .await?;
-        decode_json(resp, "GET gateway channel events").await
-    }
     async fn list_gateway_activity(&self) -> anyhow::Result<Vec<GatewayEvent>> {
         let resp = ok_or_err(
             self.get("/api/v1/gateway/activity").send().await?,
@@ -1316,74 +1238,6 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         decode_json(resp, "GET gateway activity").await
-    }
-    async fn create_gateway_channel(
-        &self,
-        type_id: &str,
-        name: &str,
-        settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel> {
-        #[derive(serde::Serialize)]
-        struct Body<'a> {
-            type_id: &'a str,
-            name: &'a str,
-            settings: HashMap<String, String>,
-        }
-        let resp = ok_or_err(
-            self.post("/api/v1/gateway/channels")
-                .json(&Body { type_id, name, settings })
-                .send()
-                .await?,
-            "POST gateway channel",
-        )
-        .await?;
-        decode_json(resp, "POST gateway channel").await
-    }
-    async fn update_gateway_channel(
-        &self,
-        id: &str,
-        name: &str,
-        enabled: bool,
-        settings: HashMap<String, String>,
-    ) -> anyhow::Result<GatewayChannel> {
-        #[derive(serde::Serialize)]
-        struct Body<'a> {
-            name: &'a str,
-            enabled: bool,
-            settings: HashMap<String, String>,
-        }
-        let resp = ok_or_err(
-            self.put(&format!("/api/v1/gateway/channels/{id}"))
-                .json(&Body { name, enabled, settings })
-                .send()
-                .await?,
-            "PUT gateway channel",
-        )
-        .await?;
-        decode_json(resp, "PUT gateway channel").await
-    }
-    async fn set_gateway_channel_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()> {
-        #[derive(serde::Serialize)]
-        struct Body {
-            enabled: bool,
-        }
-        ok_or_err(
-            self.put(&format!("/api/v1/gateway/channels/{id}/enabled"))
-                .json(&Body { enabled })
-                .send()
-                .await?,
-            "PUT gateway channel enabled",
-        )
-        .await?;
-        Ok(())
-    }
-    async fn delete_gateway_channel(&self, id: &str) -> anyhow::Result<()> {
-        ok_or_err(
-            self.delete(&format!("/api/v1/gateway/channels/{id}")).send().await?,
-            "DELETE gateway channel",
-        )
-        .await?;
-        Ok(())
     }
     async fn list_channels(&self) -> anyhow::Result<Vec<Channel>> {
         let resp = ok_or_err(self.get("/api/v1/channels").send().await?, "GET channels").await?;

@@ -384,72 +384,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/gateway/channels": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List all configured gateway channel instances. */
-        get: operations["list_gateway_channels"];
-        put?: never;
-        post: operations["post_create_gateway_channel"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/gateway/channels/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["put_gateway_channel"];
-        post?: never;
-        delete: operations["delete_gateway_channel"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/gateway/channels/{id}/enabled": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["put_gateway_channel_enabled"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/gateway/channels/{id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Recent inbound/outbound activity for a single channel (newest first). */
-        get: operations["list_gateway_channel_events"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/gateway/metalcraft/connect": {
         parameters: {
             query?: never;
@@ -510,26 +444,6 @@ export interface paths {
         };
         /** Registration/verification/connection state for the workshop's Connect panel. */
         get: operations["gateway_metalcraft_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/gateway/types": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the installed gateway channel types (with their per-instance settings
-         *     schema), so the workshop can render a "new channel" form.
-         */
-        get: operations["list_gateway_types"];
         put?: never;
         post?: never;
         delete?: never;
@@ -855,48 +769,25 @@ export interface components {
          *     The secret value itself is never included here.
          */
         Channel: {
+            /** @description The gateway number bound to this channel, if any. */
+            active_number?: string | null;
+            /** @description Whether the channel has completed a gateway connect (link fields present). */
+            connected?: boolean;
             enabled?: boolean;
+            /**
+             * @description The gateway integration UUID this channel is bound to. Inbound messages
+             *     carrying this `source_id` route here; also the send-time sender selector.
+             */
+            integration_id?: string | null;
             /** @description True only for the built-in `metalcraft` channel. */
             managed?: boolean;
+            /** @description Model override for inbound runs on this channel. */
+            model?: string | null;
             name: string;
+            /** @description Persona that answers inbound on this channel (default: orchestrator). */
+            persona?: string | null;
             slug: string;
             url: string;
-        };
-        /** @description A user-created configuration of a [`ChannelType`]. */
-        ChannelInstance: {
-            created_at?: string | null;
-            enabled?: boolean;
-            id: string;
-            name: string;
-            settings?: {
-                [key: string]: string;
-            };
-            type_id: string;
-        };
-        /** @description Manifest for a channel type — what `channel_type.json` contains. */
-        ChannelType: {
-            /**
-             * @description Native protocol adapter that handles inbound parsing + outbound sending
-             *     for this type (e.g. `"twilio"`). Selects code, not config.
-             */
-            adapter: string;
-            description: string;
-            id: string;
-            name: string;
-            /**
-             * @description When set, this type is provisioned by a named "connect" flow rather than a
-             *     manual settings form — the workshop renders that provider's Connect panel
-             *     (e.g. `"metalcraft-gateway"` auto-syncs config from the gateway).
-             */
-            provisioner?: string | null;
-            /**
-             * @description API keys this type recommends — surfaced in the key-store UI once any
-             *     instance of the type is enabled.
-             */
-            requires_env?: string[];
-            /** @description Per-instance configuration fields the workshop renders into a form. */
-            settings?: components["schemas"]["SettingField"][];
-            version: string;
         };
         ChatDetail: {
             created_at: string;
@@ -1015,13 +906,6 @@ export interface components {
         CreateChatRequest: {
             model_name?: string | null;
             persona_slug: string;
-        };
-        CreateGatewayChannelRequest: {
-            name: string;
-            settings?: {
-                [key: string]: string;
-            };
-            type_id: string;
         };
         /** @description What a flow needs beyond itself, checked against this agent's current state. */
         DependencyReport: {
@@ -1188,9 +1072,9 @@ export interface components {
              *     `sent`, `send_failed`.
              */
             outcome: string;
-            /** @description Channel type / platform, e.g. `"pipestreamr"` or `"twilio"`. */
+            /** @description Delivery kind, e.g. `"apns"`, `"whatsapp"`, or `"text"`. */
             platform: string;
-            /** @description Upstream integration UUID (PipeStreamr `source_id`), when known. */
+            /** @description Upstream gateway integration UUID (`source_id`), when known. */
             source_id?: string | null;
             /** @description Recipient identifier. */
             to?: string | null;
@@ -1556,27 +1440,6 @@ export interface components {
         SetEnabledRequest: {
             enabled: boolean;
         };
-        /**
-         * @description One configurable field in a channel type's per-instance settings schema.
-         *     `input_type` is a hint for the workshop form (`text`, `tel`, `password`,
-         *     `number`, `persona`, `model`).
-         */
-        SettingField: {
-            help?: string | null;
-            input_type?: string;
-            key: string;
-            label: string;
-            placeholder?: string | null;
-            required?: boolean;
-            /**
-             * @description When true this field is a **secret**: its value is persisted to the
-             *     channel's secret scope in the key store (`field.key` is the secret name),
-             *     never to the instance's plaintext `settings`. The workshop renders it as a
-             *     masked, write-only input under the channel's secrets — the raw value never
-             *     flows back out. Adapters read it via `key_store::lookup_scoped`.
-             */
-            secret?: boolean;
-        };
         /** @description A full skill (frontmatter description + body). */
         Skill: {
             body: string;
@@ -1614,13 +1477,6 @@ export interface components {
             /** @description New secret; omit or leave empty to keep the existing one. */
             secret?: string | null;
             url: string;
-        };
-        UpdateGatewayChannelRequest: {
-            enabled?: boolean;
-            name: string;
-            settings?: {
-                [key: string]: string;
-            };
         };
     };
     responses: never;
@@ -2374,149 +2230,6 @@ export interface operations {
             };
         };
     };
-    list_gateway_channels: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChannelInstance"][];
-                };
-            };
-        };
-    };
-    post_create_gateway_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateGatewayChannelRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChannelInstance"];
-                };
-            };
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    put_gateway_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateGatewayChannelRequest"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_gateway_channel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    put_gateway_channel_enabled: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetEnabledRequest"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_gateway_channel_events: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Channel id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GatewayEvent"][];
-                };
-            };
-        };
-    };
     gateway_metalcraft_connect: {
         parameters: {
             query?: never;
@@ -2594,25 +2307,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GatewayStatus"];
-                };
-            };
-        };
-    };
-    list_gateway_types: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChannelType"][];
                 };
             };
         };

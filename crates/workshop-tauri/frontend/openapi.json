@@ -7,7 +7,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.26.0"
+    "version": "0.27.0"
   },
   "paths": {
     "/api/v1/api-tools": {
@@ -988,193 +988,6 @@
         }
       }
     },
-    "/api/v1/gateway/channels": {
-      "get": {
-        "tags": [
-          "gateway"
-        ],
-        "summary": "List all configured gateway channel instances.",
-        "operationId": "list_gateway_channels",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ChannelInstance"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "gateway"
-        ],
-        "operationId": "post_create_gateway_channel",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateGatewayChannelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChannelInstance"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/gateway/channels/{id}": {
-      "put": {
-        "tags": [
-          "gateway"
-        ],
-        "operationId": "put_gateway_channel",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateGatewayChannelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "gateway"
-        ],
-        "operationId": "delete_gateway_channel",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/v1/gateway/channels/{id}/enabled": {
-      "put": {
-        "tags": [
-          "gateway"
-        ],
-        "operationId": "put_gateway_channel_enabled",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetEnabledRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Updated"
-          }
-        }
-      }
-    },
-    "/api/v1/gateway/channels/{id}/events": {
-      "get": {
-        "tags": [
-          "gateway"
-        ],
-        "summary": "Recent inbound/outbound activity for a single channel (newest first).",
-        "operationId": "list_gateway_channel_events",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Channel id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/GatewayEvent"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/gateway/metalcraft/connect": {
       "post": {
         "tags": [
@@ -1251,30 +1064,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GatewayStatus"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/gateway/types": {
-      "get": {
-        "tags": [
-          "gateway"
-        ],
-        "summary": "List the installed gateway channel types (with their per-instance settings\nschema), so the workshop can render a \"new channel\" form.",
-        "operationId": "list_gateway_types",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ChannelType"
-                  }
                 }
               }
             }
@@ -1993,108 +1782,52 @@
           "url"
         ],
         "properties": {
+          "active_number": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The gateway number bound to this channel, if any."
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "Whether the channel has completed a gateway connect (link fields present)."
+          },
           "enabled": {
             "type": "boolean"
+          },
+          "integration_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The gateway integration UUID this channel is bound to. Inbound messages\ncarrying this `source_id` route here; also the send-time sender selector."
           },
           "managed": {
             "type": "boolean",
             "description": "True only for the built-in `metalcraft` channel."
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model override for inbound runs on this channel."
+          },
           "name": {
             "type": "string"
+          },
+          "persona": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Persona that answers inbound on this channel (default: orchestrator)."
           },
           "slug": {
             "type": "string"
           },
           "url": {
-            "type": "string"
-          }
-        }
-      },
-      "ChannelInstance": {
-        "type": "object",
-        "description": "A user-created configuration of a [`ChannelType`].",
-        "required": [
-          "id",
-          "type_id",
-          "name"
-        ],
-        "properties": {
-          "created_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "settings": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "type_id": {
-            "type": "string"
-          }
-        }
-      },
-      "ChannelType": {
-        "type": "object",
-        "description": "Manifest for a channel type — what `channel_type.json` contains.",
-        "required": [
-          "id",
-          "name",
-          "description",
-          "version",
-          "adapter"
-        ],
-        "properties": {
-          "adapter": {
-            "type": "string",
-            "description": "Native protocol adapter that handles inbound parsing + outbound sending\nfor this type (e.g. `\"twilio\"`). Selects code, not config."
-          },
-          "description": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "provisioner": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "When set, this type is provisioned by a named \"connect\" flow rather than a\nmanual settings form — the workshop renders that provider's Connect panel\n(e.g. `\"metalcraft-gateway\"` auto-syncs config from the gateway)."
-          },
-          "requires_env": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "API keys this type recommends — surfaced in the key-store UI once any\ninstance of the type is enabled."
-          },
-          "settings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SettingField"
-            },
-            "description": "Per-instance configuration fields the workshop renders into a form."
-          },
-          "version": {
             "type": "string"
           }
         }
@@ -2544,30 +2277,6 @@
           }
         }
       },
-      "CreateGatewayChannelRequest": {
-        "type": "object",
-        "required": [
-          "type_id",
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "settings": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "type_id": {
-            "type": "string"
-          }
-        }
-      },
       "DependencyReport": {
         "type": "object",
         "description": "What a flow needs beyond itself, checked against this agent's current state.",
@@ -3010,14 +2719,14 @@
           },
           "platform": {
             "type": "string",
-            "description": "Channel type / platform, e.g. `\"pipestreamr\"` or `\"twilio\"`."
+            "description": "Delivery kind, e.g. `\"apns\"`, `\"whatsapp\"`, or `\"text\"`."
           },
           "source_id": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Upstream integration UUID (PipeStreamr `source_id`), when known."
+            "description": "Upstream gateway integration UUID (`source_id`), when known."
           },
           "to": {
             "type": [
@@ -3957,44 +3666,6 @@
           }
         }
       },
-      "SettingField": {
-        "type": "object",
-        "description": "One configurable field in a channel type's per-instance settings schema.\n`input_type` is a hint for the workshop form (`text`, `tel`, `password`,\n`number`, `persona`, `model`).",
-        "required": [
-          "key",
-          "label"
-        ],
-        "properties": {
-          "help": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "input_type": {
-            "type": "string"
-          },
-          "key": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "placeholder": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "required": {
-            "type": "boolean"
-          },
-          "secret": {
-            "type": "boolean",
-            "description": "When true this field is a **secret**: its value is persisted to the\nchannel's secret scope in the key store (`field.key` is the secret name),\nnever to the instance's plaintext `settings`. The workshop renders it as a\nmasked, write-only input under the channel's secrets — the raw value never\nflows back out. Adapters read it via `key_store::lookup_scoped`."
-          }
-        }
-      },
       "Skill": {
         "type": "object",
         "description": "A full skill (frontmatter description + body).",
@@ -4113,29 +3784,6 @@
           },
           "url": {
             "type": "string"
-          }
-        }
-      },
-      "UpdateGatewayChannelRequest": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "name": {
-            "type": "string"
-          },
-          "settings": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
           }
         }
       }

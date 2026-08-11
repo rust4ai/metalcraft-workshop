@@ -13,7 +13,7 @@ use workshop_api::{
     connection::{LocalConnection, ProjectConnection, RemoteConnection, ScheduledTask},
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
-    gateway::{Channel, GatewayChannel, GatewayEvent, GatewayType},
+    gateway::{Channel, GatewayEvent},
     integration_packs::{PackDetail, PackSummary},
     keys::{KeyEntry, RecommendedKey},
     personas, project, skills,
@@ -843,23 +843,7 @@ async fn restore_lockfile(
     Ok(result)
 }
 
-// ---------- Gateway channel commands ----------
-
-#[tauri::command]
-async fn list_gateway_types(
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<GatewayType>, String> {
-    let conn = require_connection(&state)?;
-    conn.list_gateway_types().await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn list_gateway_channels(
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<GatewayChannel>, String> {
-    let conn = require_connection(&state)?;
-    conn.list_gateway_channels().await.map_err(|e| e.to_string())
-}
+// ---------- Gateway commands ----------
 
 #[tauri::command]
 async fn gateway_metalcraft_status(
@@ -888,15 +872,6 @@ async fn gateway_metalcraft_connect(
 }
 
 #[tauri::command]
-async fn list_gateway_channel_events(
-    id: String,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<GatewayEvent>, String> {
-    let conn = require_connection(&state)?;
-    conn.list_gateway_channel_events(&id).await.map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 async fn list_gateway_activity(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<GatewayEvent>, String> {
@@ -904,60 +879,6 @@ async fn list_gateway_activity(
     conn.list_gateway_activity().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn create_gateway_channel(
-    type_id: String,
-    name: String,
-    settings: std::collections::HashMap<String, String>,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<GatewayChannel, String> {
-    let conn = require_connection(&state)?;
-    conn.create_gateway_channel(&type_id, &name, settings)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn update_gateway_channel(
-    id: String,
-    name: String,
-    enabled: bool,
-    settings: std::collections::HashMap<String, String>,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<GatewayChannel, String> {
-    let conn = require_connection(&state)?;
-    conn.update_gateway_channel(&id, &name, enabled, settings)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn set_gateway_channel_enabled(
-    id: String,
-    enabled: bool,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let conn = require_connection(&state)?;
-    conn.set_gateway_channel_enabled(&id, enabled)
-        .await
-        .map_err(|e| e.to_string())?;
-    // Enabling a channel changes which keys are recommended (its type's
-    // requires_env), so nudge the UI to refresh.
-    state.emit(WorkshopEvent::SaveOk {
-        kind: FileKind::Unknown,
-        id,
-    });
-    Ok(())
-}
-
-#[tauri::command]
-async fn delete_gateway_channel(
-    id: String,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    let conn = require_connection(&state)?;
-    conn.delete_gateway_channel(&id).await.map_err(|e| e.to_string())
-}
 
 // ---------- Channels (the simple {slug, name, url, secret} model) ----------
 
@@ -1575,17 +1496,10 @@ fn main() {
             uninstall_pack,
             get_lockfile,
             restore_lockfile,
-            list_gateway_types,
-            list_gateway_channels,
             gateway_metalcraft_status,
             gateway_metalcraft_register,
             gateway_metalcraft_connect,
-            list_gateway_channel_events,
             list_gateway_activity,
-            create_gateway_channel,
-            update_gateway_channel,
-            set_gateway_channel_enabled,
-            delete_gateway_channel,
             list_channels,
             channel_events,
             create_channel,

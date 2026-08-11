@@ -274,16 +274,10 @@ export type PackSummary = S["IntegrationPackSummary"];
 
 export type PackDetail = S["IntegrationPackDetail"];
 
-// ── Gateway channels ───────────────────────────────────────────────────────
-
-export type GatewaySettingField = S["SettingField"];
-
-export type GatewayType = S["ChannelType"];
+// ── Gateway ────────────────────────────────────────────────────────────────
 
 /** Registration/verification/connection state for the Metalcraft Gateway Connect panel. */
 export type MetalcraftGatewayStatus = S["GatewayStatus"];
-
-export type GatewayChannel = S["ChannelInstance"];
 
 /** A channel/connection in the simple model — `{ slug, name, url, enabled, managed }`. */
 export type Channel = S["Channel"];
