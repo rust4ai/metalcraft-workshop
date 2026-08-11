@@ -945,6 +945,37 @@ function scheduleSummary(s: FlowScheduleSpec): string {
   return describeCron(s.cron ?? "") + (s.timezone ? ` (${s.timezone})` : "");
 }
 
+/** Legacy entry-node schedule (`schedule_type`/`interval`/`cron`) as a flow-level
+ *  spec, so an old flow's schedule shows up in the panel. Empty for manual/none. */
+function deriveEntrySchedules(flow: SavedFlow): FlowScheduleSpec[] {
+  const entry = flow.flow.nodes.find((n) => n.node_type === "entry");
+  const d = (entry?.data ?? {}) as Record<string, unknown>;
+  const st = d.schedule_type as string | undefined;
+  if (st === "minutes" || st === "hours") {
+    return [{ id: "default", enabled: true, type: st, interval: (d.interval as number) ?? 30 }];
+  }
+  if (st === "cron") {
+    return [{ id: "default", enabled: true, type: "cron", cron: (d.cron as string) ?? dailyCron(9, 0) }];
+  }
+  return [];
+}
+
+/** Drop the legacy schedule fields from the entry node so `schedules[]` is the
+ *  single source of truth once the user edits schedules here. */
+function stripEntrySchedule(def: SavedFlow["flow"]): SavedFlow["flow"] {
+  return {
+    ...def,
+    nodes: def.nodes.map((n) => {
+      if (n.node_type !== "entry") return n;
+      const data = { ...(n.data as Record<string, unknown>) };
+      delete data.schedule_type;
+      delete data.interval;
+      delete data.cron;
+      return { ...n, data };
+    }),
+  };
+}
+
 /** Collapsible editor for a flow's schedules. Edits `flow.schedules` in-memory;
  *  it's persisted by the editor's existing Save button (save_flow sends the whole
  *  document, and metalcraft-flows 0.4.0 round-trips `schedules[]`). */
@@ -956,9 +987,14 @@ function SchedulesPanel({
   onChange: (patch: Partial<SavedFlow>) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const rows = flow.schedules ?? [];
+  const stored = flow.schedules ?? [];
+  // Show the stored array, or materialize a legacy entry-node schedule so it's
+  // visible/editable. Rows aren't persisted until the user edits (which also
+  // strips the legacy entry fields, migrating to the array form).
+  const rows = stored.length ? stored : deriveEntrySchedules(flow);
 
-  const setRows = (next: FlowScheduleSpec[]) => onChange({ schedules: next });
+  const setRows = (next: FlowScheduleSpec[]) =>
+    onChange({ schedules: next, flow: stripEntrySchedule(flow.flow) });
   const update = (i: number, patch: Partial<FlowScheduleSpec>) =>
     setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () =>
@@ -1372,46 +1408,12 @@ function RecentSessions({
 
 function EntryFields({ node, onChange }: { node: FlowNode; onChange: (n: FlowNode) => void }) {
   const d = node.data as Record<string, unknown>;
-  const scheduleType = (d.schedule_type as string) ?? "manual";
   return (
     <>
-      <label className="block">
-        <span className="block text-xs text-gray-500 mb-1">Schedule type</span>
-        <select
-          value={scheduleType}
-          onChange={(e) => onChange({ ...node, data: { ...d, schedule_type: e.target.value } })}
-          className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
-        >
-          {["manual", "minutes", "hours", "cron"].map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-      </label>
-      {(scheduleType === "minutes" || scheduleType === "hours") && (
-        <label className="block">
-          <span className="block text-xs text-gray-500 mb-1">Interval</span>
-          <input
-            type="number"
-            value={(d.interval as number) ?? 30}
-            onChange={(e) =>
-              onChange({ ...node, data: { ...d, interval: Number(e.target.value) } })
-            }
-            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded text-sm"
-          />
-        </label>
-      )}
-      {scheduleType === "cron" && (
-        <label className="block">
-          <span className="block text-xs text-gray-500 mb-1">Cron expression</span>
-          <input
-            type="text"
-            value={(d.cron as string) ?? ""}
-            onChange={(e) => onChange({ ...node, data: { ...d, cron: e.target.value } })}
-            className="w-full px-2 py-1 bg-surface-2 border border-surface-3 rounded font-mono text-sm"
-            placeholder="0 */5 * * * *"
-          />
-        </label>
-      )}
+      <p className="text-xs text-gray-500">
+        When this flow runs is set in the <span className="text-gray-300">Schedules</span> panel above
+        — a flow can have several schedules. The entry node just declares the flow's inputs.
+      </p>
       <EntryInputsEditor
         inputs={(d.inputs as FlowInputs) ?? {}}
         onChange={(next) =>
