@@ -210,11 +210,13 @@ function ChannelRow({
       </div>
 
       {expanded && (
-        <div className="border-t border-surface-3 p-3">
+        <div className="border-t border-surface-3">
           {events === null ? (
             <div className="text-sm text-gray-500 py-3 text-center">Loading activity…</div>
           ) : (
-            <GatewayEventList events={events.slice(0, 30)} />
+            <div className="max-h-80 overflow-y-auto p-3">
+              <GatewayEventList events={events} />
+            </div>
           )}
         </div>
       )}
