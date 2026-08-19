@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useReportError } from "../hooks/useReportError";
 import type {
+  AgentPackPreview,
+  InstallReport,
+  InstalledAgentPack,
   Lock,
+  PackSource,
   PackDetail,
   PackSummary,
   ProjectSnapshot,
@@ -79,13 +84,14 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-3xl space-y-3">
-        <h2 className="text-sm font-semibold text-accent">Integration packs</h2>
+        <AgentPacks snapshot={snapshot} onChanged={refresh} />
+
+        <h2 className="text-sm font-semibold text-accent pt-4">Integration packs</h2>
         <p className="text-xs text-gray-500">
-          Each pack bundles personas, skills, HTTP-API tools, and flow
-          templates around a single integration. Enabling a pack makes its
-          contents visible to the agent runtime and editor.
+          The HTTP-API tools behind each service. These are not installed on their
+          own — an agent pack vendors the ones its personas need, so this list is a
+          read-only view of what those packs brought with them.
         </p>
-        <InstallPack onInstalled={refresh} />
         {packs.length === 0 ? (
           <div className="text-sm text-gray-500 italic">No packs installed.</div>
         ) : (
@@ -106,11 +112,7 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
                     <span className="text-xs text-gray-600 font-mono">
                       v{p.version}
                     </span>
-                    {p.enabled && (
-                      <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-green-900/40 text-green-300 rounded">
-                        Enabled
-                      </span>
-                    )}
+
                   </div>
                   <p className="text-xs text-gray-400 mt-1">{p.description}</p>
                   <p className="text-xs text-gray-500 mt-2 font-mono">
@@ -123,11 +125,7 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
                     </p>
                   )}
                 </div>
-                <PackToggle
-                  packId={p.id}
-                  enabled={p.enabled}
-                  onChanged={refresh}
-                />
+
               </li>
             ))}
           </ul>
@@ -137,63 +135,6 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
     </div>
   );
 }
-
-/** Install a pack from the registry by slug, with an optional version pin. */
-function InstallPack({ onInstalled }: { onInstalled: () => void }) {
-  const reportError = useReportError();
-  const [slug, setSlug] = useState("");
-  const [version, setVersion] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const install = async () => {
-    const s = slug.trim();
-    if (!s || busy) return;
-    setBusy(true);
-    try {
-      await invoke<PackSummary>("install_pack", {
-        slug: s,
-        version: version.trim() || null,
-        contentSha256: null,
-      });
-      setSlug("");
-      setVersion("");
-      onInstalled();
-    } catch (e) {
-      reportError("install_pack", e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex gap-2">
-      <input
-        value={slug}
-        onChange={(e) => setSlug(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && install()}
-        placeholder="Install pack by registry slug…"
-        className="flex-1 min-w-0 px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-sm"
-      />
-      <input
-        value={version}
-        onChange={(e) => setVersion(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && install()}
-        placeholder="version"
-        className="w-24 px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-sm font-mono"
-      />
-      <button
-        onClick={install}
-        disabled={busy || !slug.trim()}
-        className="px-3 py-1.5 text-sm bg-accent hover:bg-accent-light text-white rounded disabled:opacity-40"
-      >
-        {busy ? "…" : "Install"}
-      </button>
-    </div>
-  );
-}
-
-/** The `metalcraft.lock` view: pinned packs + flows, and a one-click restore that
- *  reinstalls each at its locked version (verifying content hashes). */
 function LockfilePanel() {
   const reportError = useReportError();
   const [open, setOpen] = useState(false);
@@ -296,44 +237,6 @@ function LockGroup({ title, entries }: { title: string; entries: Lock["packs"] }
     </div>
   );
 }
-
-function PackToggle({
-  packId,
-  enabled,
-  onChanged,
-}: {
-  packId: string;
-  enabled: boolean;
-  onChanged: () => void;
-}) {
-  const reportError = useReportError();
-  const [pending, setPending] = useState(false);
-  const toggle = async () => {
-    setPending(true);
-    try {
-      await invoke("set_pack_enabled", { id: packId, enabled: !enabled });
-      onChanged();
-    } catch (e) {
-      reportError("set_pack_enabled", e);
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <button
-      onClick={toggle}
-      disabled={pending}
-      className={`px-3 py-1.5 text-xs rounded font-medium disabled:opacity-40 ${
-        enabled
-          ? "bg-red-900/40 hover:bg-red-900/60 text-red-200"
-          : "bg-accent hover:bg-accent-light text-white"
-      }`}
-    >
-      {pending ? "…" : enabled ? "Disable" : "Enable"}
-    </button>
-  );
-}
-
 function PackDetailPanel({
   packId,
   summaryEnabled,
@@ -386,14 +289,10 @@ function PackDetailPanel({
           )}
         </header>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <PackToggle
-            packId={detail.id}
-            enabled={summaryEnabled}
-            onChanged={onToggled}
-          />
-          <UninstallPack packId={detail.id} onUninstalled={onUninstalled} />
-        </div>
+        <p className="text-xs text-gray-500">
+          Provided by an installed agent pack. To remove these tools, uninstall the
+          pack that vendors them.
+        </p>
 
         <Section title="Personas" items={detail.personas} />
         <Section title="Skills" items={detail.skills} />
@@ -403,85 +302,6 @@ function PackDetailPanel({
     </div>
   );
 }
-
-/** Uninstall a pack; surfaces which flows/personas still depend on it afterward. */
-function UninstallPack({
-  packId,
-  onUninstalled,
-}: {
-  packId: string;
-  onUninstalled: () => void;
-}) {
-  const reportError = useReportError();
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<UninstallPackResult | null>(null);
-
-  const run = async () => {
-    setBusy(true);
-    try {
-      const res = await invoke<UninstallPackResult>("uninstall_pack", { id: packId });
-      if (res.dependent_flows.length + res.dependent_personas.length > 0) {
-        setResult(res); // keep the warning visible before leaving
-      } else {
-        onUninstalled();
-      }
-    } catch (e) {
-      reportError("uninstall_pack", e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (result) {
-    return (
-      <div className="w-full space-y-2 rounded border border-amber-800/50 bg-amber-900/20 p-3 text-xs text-amber-300">
-        <p>Uninstalled — but these still reference it until edited or reinstalled:</p>
-        {result.dependent_flows.length > 0 && <p>Flows: {result.dependent_flows.join(", ")}</p>}
-        {result.dependent_personas.length > 0 && (
-          <p>Personas: {result.dependent_personas.join(", ")}</p>
-        )}
-        <button
-          onClick={onUninstalled}
-          className="px-2 py-1 bg-surface-2 hover:bg-surface-3 text-gray-200 border border-surface-3 rounded"
-        >
-          Dismiss
-        </button>
-      </div>
-    );
-  }
-
-  if (!confirming) {
-    return (
-      <button
-        onClick={() => setConfirming(true)}
-        className="px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded font-medium"
-      >
-        Uninstall
-      </button>
-    );
-  }
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-400">Remove this pack?</span>
-      <button
-        onClick={run}
-        disabled={busy}
-        className="px-3 py-1.5 text-xs bg-red-900/40 hover:bg-red-900/60 text-red-200 rounded font-medium disabled:opacity-40"
-      >
-        {busy ? "…" : "Confirm"}
-      </button>
-      <button
-        onClick={() => setConfirming(false)}
-        disabled={busy}
-        className="px-3 py-1.5 text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 rounded"
-      >
-        Cancel
-      </button>
-    </div>
-  );
-}
-
 function Section({ title, items }: { title: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
@@ -497,6 +317,493 @@ function Section({ title, items }: { title: string; items: string[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Agent packs — the install unit.
+ *
+ * A pack carries one agent preset plus every persona, skill and integration pack it
+ * needs, so installing one is the moment a person grants an agent reach into their
+ * accounts. The dialog below therefore *inspects first*: the pod validates the
+ * archive, derives what it would reach from the archive's own tool definitions, and
+ * says so — and only then offers to install. Showing a permission summary after the
+ * fact would not be consent.
+ */
+function AgentPacks({
+  snapshot,
+  onChanged,
+}: {
+  snapshot: ProjectSnapshot;
+  onChanged: () => void;
+}) {
+  const reportError = useReportError();
+  const [packs, setPacks] = useState<InstalledAgentPack[] | null>(null);
+  const [registries, setRegistries] = useState<string[]>([]);
+
+  const refresh = async () => {
+    try {
+      setPacks(await invoke<InstalledAgentPack[]>("list_agent_packs"));
+    } catch (e) {
+      reportError("list_agent_packs", e);
+      setPacks([]);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    invoke<string[]>("agent_pack_registries")
+      .then(setRegistries)
+      .catch(() => setRegistries([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold text-accent">Agent packs</h2>
+      <p className="text-xs text-gray-500">
+        An agent, packaged: one preset, its personas and skills, and every
+        integration pack they need. Installing one adds an agent you can start a chat
+        with.
+      </p>
+
+      <InstallAgentPack
+        registries={registries}
+        onInstalled={() => {
+          refresh();
+          onChanged();
+        }}
+      />
+
+      {packs === null ? (
+        <div className="text-xs text-gray-500">Loading…</div>
+      ) : packs.length === 0 ? (
+        <div className="text-sm text-gray-500 italic">
+          No agent packs installed. The agents this pod ships with are built in.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {packs.map((p) => (
+            <li key={p.id} className="bg-surface-1 border border-surface-3 rounded p-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-200">{p.manifest.name}</span>
+                <span className="text-xs text-gray-600 font-mono">
+                  v{p.manifest.version}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">{p.manifest.description}</p>
+              <p className="text-xs text-gray-500 mt-2 font-mono">
+                {(p.manifest.presets ?? []).join(", ") || "no preset"} ·{" "}
+                {(p.manifest.provides?.personas ?? []).length} personas ·{" "}
+                {(p.manifest.provides?.skills ?? []).length} skills
+              </p>
+              <UninstallAgentPack
+                id={p.id}
+                name={p.manifest.name}
+                onDone={() => {
+                  refresh();
+                  onChanged();
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ExportAgentPack snapshot={snapshot} />
+    </section>
+  );
+}
+
+function InstallAgentPack({
+  registries,
+  onInstalled,
+}: {
+  registries: string[];
+  onInstalled: () => void;
+}) {
+  const reportError = useReportError();
+  const [url, setUrl] = useState("");
+  const [preview, setPreview] = useState<AgentPackPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<InstallReport | null>(null);
+
+  const inspect = async (source: PackSource) => {
+    setBusy(true);
+    setReport(null);
+    try {
+      setPreview(await invoke<AgentPackPreview>("inspect_agent_pack", { source }));
+    } catch (e) {
+      reportError("inspect_agent_pack", e);
+      setPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /// Pick an `.agentpack` from this machine. The Rust side reads it and uploads the
+  /// bytes — the pod may be elsewhere and cannot open a path we hand it.
+  const [localPath, setLocalPath] = useState("");
+  const pickFile = async () => {
+    const picked = await openDialog({
+      multiple: false,
+      filters: [{ name: "Agent pack", extensions: ["agentpack", "zip"] }],
+    });
+    if (!picked || Array.isArray(picked)) return;
+    setLocalPath(picked);
+    await inspect({ kind: "local_file", path: picked });
+  };
+
+  const install = async () => {
+    if (!preview) return;
+    setBusy(true);
+    try {
+      // Install the *same source* that was inspected, so what lands is what was
+      // approved.
+      const source: PackSource = localPath
+        ? { kind: "local_file", path: localPath }
+        : { kind: "url", url: url.trim() };
+      setReport(await invoke<InstallReport>("install_agent_pack", { source }));
+      setPreview(null);
+      setLocalPath("");
+      onInstalled();
+    } catch (e) {
+      reportError("install_agent_pack", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (report) {
+    return (
+      <div className="bg-surface-1 border border-green-700/50 rounded p-4 space-y-2">
+        <div className="text-sm text-green-300">
+          Installed {report.id} v{report.version}
+        </div>
+        <div className="text-xs text-gray-400">
+          {(report.presets ?? []).length} agent · {(report.personas ?? []).length}{" "}
+          personas · {(report.skills ?? []).length} skills ·{" "}
+          {report.memories_indexed} memories
+        </div>
+        {(report.missing_env ?? []).length > 0 && (
+          <div className="text-xs text-amber-400">
+            Still needs: {report.missing_env.join(", ")} — set them in Keys, or its
+            tools will fail when the agent reaches for them.
+          </div>
+        )}
+        <button
+          onClick={() => setReport(null)}
+          className="text-xs text-gray-500 hover:text-gray-300 underline"
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+
+  if (preview) {
+    return (
+      <ConsentDialog
+        preview={preview}
+        busy={busy}
+        onInstall={install}
+        onCancel={() => setPreview(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) =>
+            e.key === "Enter" && url.trim() && inspect({ kind: "url", url: url.trim() })
+          }
+          placeholder="Paste an agent pack URL…"
+          className="flex-1 min-w-0 px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+        />
+        <button
+          onClick={() => url.trim() && inspect({ kind: "url", url: url.trim() })}
+          disabled={busy || !url.trim()}
+          className="px-3 py-2 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded disabled:opacity-40"
+        >
+          {busy ? "…" : "Review"}
+        </button>
+        <button
+          onClick={pickFile}
+          disabled={busy}
+          className="px-3 py-2 text-xs text-gray-400 hover:text-gray-200 border border-surface-3 rounded disabled:opacity-40"
+        >
+          From file…
+        </button>
+      </div>
+      {registries.length > 0 && (
+        <p className="text-[10px] text-gray-600">
+          This pod downloads from: {registries.join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/// What installing would grant, before it is granted.
+///
+/// Everything here is derived by the pod from the archive's own bytes — the domains
+/// come from the tools' URLs, the credentials from what those tools reference. An
+/// author cannot write a friendlier summary of their own pack.
+function ConsentDialog({
+  preview,
+  busy,
+  onInstall,
+  onCancel,
+}: {
+  preview: AgentPackPreview;
+  busy: boolean;
+  onInstall: () => void;
+  onCancel: () => void;
+}) {
+  const c = preview.consent;
+  const mutating = (c.mutating_tools ?? []).length;
+  const total = (c.tools ?? []).length;
+
+  return (
+    <div className="bg-surface-1 border border-accent/40 rounded p-4 space-y-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-100">
+            {preview.manifest.name}
+          </span>
+          <span className="text-xs text-gray-600 font-mono">
+            v{preview.manifest.version}
+          </span>
+          {preview.installed_version && (
+            <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-surface-3 text-gray-400 rounded">
+              replaces v{preview.installed_version}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 mt-1">{preview.manifest.description}</p>
+      </div>
+
+      <p className="text-xs text-gray-300">
+        {mutating === 0
+          ? `This agent only reads. None of its ${total} tools can change anything.`
+          : `This agent can change things: ${mutating} of its ${total} tools write.`}
+      </p>
+
+      {(c.domains ?? []).length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">Reaches</div>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {c.domains.map((d) => (
+              <span
+                key={d}
+                className="px-1.5 py-0.5 text-xs bg-surface-2 text-gray-300 rounded font-mono"
+              >
+                {d}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(c.requires_env ?? []).length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">
+            Wants these credentials
+          </div>
+          <ul className="mt-1 space-y-0.5">
+            {c.requires_env.map((e) => (
+              <li key={e.name} className="text-xs">
+                <code className="text-gray-300">{e.name}</code>
+                <span className="text-gray-500">
+                  {" "}
+                  — for {(e.needed_by ?? []).join(", ")}
+                  {(preview.missing_env ?? []).includes(e.name) ? " (not set)" : " (set)"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(preview.preset_collisions ?? []).length > 0 && (
+        <p className="px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded text-xs text-amber-300">
+          An agent named {preview.preset_collisions.join(", ")} already exists on this
+          pod. Installing this would make both unusable — the loader refuses to guess
+          between two agents with the same name.
+        </p>
+      )}
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={onInstall}
+          disabled={busy || (preview.preset_collisions ?? []).length > 0}
+          className="px-4 py-2 text-sm bg-accent hover:bg-accent-light text-white rounded disabled:opacity-40"
+        >
+          {busy ? "Installing…" : "Install"}
+        </button>
+        <button onClick={onCancel} className="text-xs text-gray-500 hover:text-gray-300">
+          Cancel
+        </button>
+        <span
+          className="ml-auto text-[10px] text-gray-600 font-mono"
+          title={`content hash: ${preview.content_sha256}`}
+        >
+          {preview.content_sha256.slice(0, 12)}…
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function UninstallAgentPack({
+  id,
+  name,
+  onDone,
+}: {
+  id: string;
+  name: string;
+  onDone: () => void;
+}) {
+  const reportError = useReportError();
+  const [confirming, setConfirming] = useState(false);
+  const [inUse, setInUse] = useState<string | null>(null);
+
+  const run = async (force: boolean) => {
+    try {
+      await invoke("uninstall_agent_pack", { id, force });
+      setConfirming(false);
+      setInUse(null);
+      onDone();
+    } catch (e) {
+      const msg = String(e);
+      // The pod refuses while a saved agent still uses it, and says which. That is
+      // a question to put to the user, not an error to swallow.
+      if (msg.includes("in use by")) setInUse(msg);
+      else reportError("uninstall_agent_pack", e);
+    }
+  };
+
+  if (inUse) {
+    return (
+      <div className="mt-3 px-3 py-2 bg-surface-2 border border-amber-500/40 rounded space-y-2">
+        <p className="text-xs text-amber-300">{inUse}</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => run(true)}
+            className="px-3 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded"
+          >
+            Uninstall anyway
+          </button>
+          <button
+            onClick={() => setInUse(null)}
+            className="text-xs text-gray-500 hover:text-gray-300"
+          >
+            Keep it
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!confirming) {
+    return (
+      <button
+        onClick={() => setConfirming(true)}
+        className="mt-3 text-xs text-red-400/70 hover:text-red-400 underline"
+      >
+        Uninstall
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <span className="text-xs text-gray-300">Uninstall “{name}”?</span>
+      <button
+        onClick={() => run(false)}
+        className="px-3 py-1 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded"
+      >
+        Uninstall
+      </button>
+      <button
+        onClick={() => setConfirming(false)}
+        className="text-xs text-gray-500 hover:text-gray-300"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+/// Package one of this pod's own agents as a distributable `.agentpack`.
+function ExportAgentPack({ snapshot }: { snapshot: ProjectSnapshot }) {
+  const reportError = useReportError();
+  const [preset, setPreset] = useState("");
+  const [version, setVersion] = useState("0.1.0");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  const presets = snapshot.agent_presets ?? [];
+  if (presets.length === 0) return null;
+
+  const run = async () => {
+    const slug = preset || presets[0].slug;
+    const path = await saveDialog({
+      defaultPath: `${slug}-${version}.agentpack`,
+      filters: [{ name: "Agent pack", extensions: ["agentpack"] }],
+    });
+    if (!path) return;
+    setBusy(true);
+    try {
+      const bytes = await invoke<number>("export_agent_pack", {
+        preset: slug,
+        version,
+        outPath: path,
+      });
+      setDone(`${path} (${bytes} bytes)`);
+    } catch (e) {
+      reportError("export_agent_pack", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pt-4 space-y-2">
+      <h3 className="text-xs uppercase tracking-wide text-gray-500">
+        Export one of this pod's agents
+      </h3>
+      <div className="flex gap-2">
+        <select
+          value={preset || presets[0].slug}
+          onChange={(e) => setPreset(e.target.value)}
+          className="px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-xs"
+        >
+          {presets.map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <input
+          value={version}
+          onChange={(e) => setVersion(e.target.value)}
+          className="w-24 px-2 py-1.5 bg-surface-2 border border-surface-3 rounded text-xs font-mono"
+        />
+        <button
+          onClick={run}
+          disabled={busy}
+          className="px-3 py-1.5 text-xs bg-accent/20 hover:bg-accent/30 text-accent-light rounded disabled:opacity-40"
+        >
+          {busy ? "…" : "Export"}
+        </button>
+      </div>
+      {done && <p className="text-xs text-gray-500 font-mono truncate">Wrote {done}</p>}
     </div>
   );
 }

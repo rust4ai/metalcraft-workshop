@@ -9,8 +9,9 @@ use tauri::{Emitter, Manager};
 use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
     agents::{
-        AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
-        InstanceMemory, InstancePatch,
+        AgentInstance, AgentPackPreview, AgentPreset, AgentPresetDetail, AgentPresetSummary,
+        InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory, InstancePatch,
+        PackSource, UninstallReport,
     },
     api_tools::{ApiToolConfig, ApiToolSummary},
     chat::{ChatDetail, ChatEvent, ChatSummary, RunFlowResult},
@@ -715,6 +716,118 @@ async fn delete_agent_instance(
 ) -> Result<usize, String> {
     let conn = require_connection(&state)?;
     conn.delete_agent_instance(&id).await.map_err(|e| e.to_string())
+}
+
+// ---- Agent packs ----
+//
+// The distribution unit. Installing one is where a person grants an agent reach into
+// their accounts, so `inspect_agent_pack` exists to make that a decision: it runs the
+// installer's own validation and returns the derived consent summary *without*
+// installing anything.
+
+/// A source, as the frontend sends it: exactly one of the three.
+///
+/// Modelled as a tagged enum rather than three optional fields so "url and bytes
+/// both set" is unrepresentable — the two operations must address the same thing,
+/// and ambiguity there is a difference between what was approved and what was done.
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum PackSourceArg {
+    /// A registry URL the *pod* downloads from.
+    Url { url: String },
+    /// A path on the *pod's* filesystem — for a self-hosted agent on this machine.
+    Path { path: String },
+    /// A file the user picked on **this** machine. Read here and uploaded, because
+    /// the pod may be somewhere else entirely and cannot open a path we hand it.
+    LocalFile { path: String },
+}
+
+impl PackSourceArg {
+    fn into_source(self) -> Result<PackSource, String> {
+        Ok(match self {
+            Self::Url { url } => PackSource::Url(url),
+            Self::Path { path } => PackSource::Path(path),
+            Self::LocalFile { path } => PackSource::Bytes(
+                std::fs::read(&path).map_err(|e| format!("reading {path}: {e}"))?,
+            ),
+        })
+    }
+}
+
+#[tauri::command]
+async fn list_agent_packs(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<InstalledAgentPack>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_agent_packs().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_agent_pack(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<InstalledAgentPack, String> {
+    let conn = require_connection(&state)?;
+    conn.get_agent_pack(&id).await.map_err(|e| e.to_string())
+}
+
+/// Origins this pod will download from. Empty in local mode, which the UI reads as
+/// "upload a file instead".
+#[tauri::command]
+async fn agent_pack_registries(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<String>, String> {
+    let conn = require_connection(&state)?;
+    conn.agent_pack_registries().await.map_err(|e| e.to_string())
+}
+
+/// What installing would grant. Nothing is installed.
+#[tauri::command]
+async fn inspect_agent_pack(
+    source: PackSourceArg,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<AgentPackPreview, String> {
+    let conn = require_connection(&state)?;
+    conn.inspect_agent_pack(&source.into_source()?).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn install_agent_pack(
+    source: PackSourceArg,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<InstallReport, String> {
+    let conn = require_connection(&state)?;
+    conn.install_agent_pack(&source.into_source()?).await.map_err(|e| e.to_string())
+}
+
+/// `force` orphans any saved agents made from this pack rather than refusing.
+#[tauri::command]
+async fn uninstall_agent_pack(
+    id: String,
+    force: Option<bool>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<UninstallReport, String> {
+    let conn = require_connection(&state)?;
+    conn.uninstall_agent_pack(&id, force.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Package one of this pod's presets and write it where the user chose.
+#[tauri::command]
+async fn export_agent_pack(
+    preset: String,
+    version: Option<String>,
+    out_path: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    let conn = require_connection(&state)?;
+    let bytes = conn
+        .export_agent_pack(&preset, version.as_deref().unwrap_or("0.1.0"))
+        .await
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&out_path, &bytes).map_err(|e| format!("writing {out_path}: {e}"))?;
+    Ok(bytes.len())
 }
 
 #[tauri::command]
@@ -1618,6 +1731,13 @@ fn main() {
             patch_agent_instance,
             delete_agent_instance,
             agent_instance_memory,
+            list_agent_packs,
+            get_agent_pack,
+            agent_pack_registries,
+            inspect_agent_pack,
+            install_agent_pack,
+            uninstall_agent_pack,
+            export_agent_pack,
             delete_chat,
             chat_turn,
             subscribe_chat_events,

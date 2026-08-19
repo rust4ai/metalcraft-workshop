@@ -35,6 +35,31 @@ export type RosterPersona = S["RosterPersona"];
 export type AgentPresetDetail = S["PresetDetail"];
 export type ScheduledFlowRef = S["ScheduledFlowRef"];
 
+// ---- Agent packs -----------------------------------------------------------
+//
+// The distribution unit: one preset plus every persona, skill and integration pack
+// it needs. Installing one is where a person grants an agent reach into their
+// accounts, so `AgentPackPreview` exists to make that a decision — it is what the
+// pod would install, described, without installing it.
+
+export type InstalledAgentPack = S["InstalledAgentPack"];
+export type AgentPackManifest = S["AgentPackManifest"];
+export type AgentPackPreview = S["AgentPackPreview"];
+export type ConsentSummary = S["ConsentSummary"];
+export type InstallReport = S["InstallReport"];
+export type UninstallReport = S["UninstallReport"];
+
+/// Where an archive comes from. Exactly one, tagged — inspecting and installing must
+/// address the same thing, and "url and bytes both set" should not be expressible.
+export type PackSource =
+  /// A registry URL the *pod* downloads from.
+  | { kind: "url"; url: string }
+  /// A path on the *pod's* filesystem.
+  | { kind: "path"; path: string }
+  /// A file on **this** machine. The Rust side reads it and uploads the bytes,
+  /// because the pod may be elsewhere and cannot open a path we hand it.
+  | { kind: "local_file"; path: string };
+
 /// The Tauri layer reshapes this one: the pod flattens the instance into the
 /// response, while the command returns it nested so the two data sources (pod and
 /// local directory) can share a type.

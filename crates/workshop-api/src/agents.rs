@@ -450,3 +450,179 @@ mod tests {
         assert_eq!(out["version"], "1.0.0");
     }
 }
+
+// ---- Agent packs ----------------------------------------------------------
+//
+// The distribution unit: one preset plus every persona, skill and integration pack
+// it needs, in a signed-by-content `.agentpack` archive. Installing one is the
+// moment a person grants an agent reach into their accounts, so the preview below
+// exists to make that a decision rather than a surprise.
+
+/// An installed agent pack.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledAgentPack {
+    pub id: String,
+    pub manifest: AgentPackManifest,
+    #[serde(default)]
+    pub root: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentPackManifest {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub presets: Vec<String>,
+    #[serde(default)]
+    pub provides: PackProvides,
+    #[serde(default)]
+    pub author: Option<serde_json::Value>,
+    #[serde(default)]
+    pub content_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PackProvides {
+    #[serde(default)]
+    pub personas: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub integration_packs: Vec<serde_json::Value>,
+}
+
+/// What installing a pack would grant — **derived from the archive's own bytes**,
+/// never from what its author wrote about it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsentSummary {
+    /// Every origin this agent's tools can reach.
+    #[serde(default)]
+    pub domains: Vec<String>,
+    #[serde(default)]
+    pub requires_env: Vec<EnvRequirement>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    /// A read-only agent is a materially smaller commitment than one that can write,
+    /// and a dialog should say which it is.
+    #[serde(default)]
+    pub mutating_tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvRequirement {
+    pub name: String,
+    #[serde(default)]
+    pub needed_by: Vec<String>,
+    #[serde(default = "yes")]
+    pub required: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// The answer to "what would installing this do", without installing it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPackPreview {
+    pub manifest: AgentPackManifest,
+    pub consent: ConsentSummary,
+    #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
+    pub content_sha256: String,
+    #[serde(default)]
+    pub source: String,
+    /// Present means this is an upgrade (or a downgrade), not a first install.
+    #[serde(default)]
+    pub installed_version: Option<String>,
+    /// Credentials the pod does not have yet. A warning, not a blocker.
+    #[serde(default)]
+    pub missing_env: Vec<String>,
+    #[serde(default)]
+    pub preset_collisions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct InstallReport {
+    pub id: String,
+    pub version: String,
+    #[serde(default)]
+    pub presets: Vec<String>,
+    #[serde(default)]
+    pub personas: Vec<String>,
+    #[serde(default)]
+    pub skills: Vec<String>,
+    #[serde(default)]
+    pub packs_stored: Vec<String>,
+    #[serde(default)]
+    pub packs_deduplicated: Vec<String>,
+    #[serde(default)]
+    pub missing_env: Vec<String>,
+    #[serde(default)]
+    pub preset_collisions: Vec<String>,
+    #[serde(default)]
+    pub memories_indexed: usize,
+    #[serde(default)]
+    pub consent: ConsentSummary,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UninstallReport {
+    pub id: String,
+    /// Agents left pointing at a preset that no longer exists. Never silently
+    /// deleted — someone's memories are in there.
+    #[serde(default)]
+    pub orphaned_agents: Vec<String>,
+    /// Integration packs whose last reference this was, so the content store
+    /// released them.
+    #[serde(default)]
+    pub packs_freed: usize,
+}
+
+pub fn agent_packs_dir(project_root: &Path) -> PathBuf {
+    project_root.join("agent_packs")
+}
+
+/// Read `<project>/agent_packs/*/agent_pack.json`.
+///
+/// The local backend can answer *what is installed* — those are files. It cannot
+/// install: that writes into the content store and rebuilds a memory index, which is
+/// the pod's job.
+pub fn list_installed_packs(project_root: &Path) -> Vec<InstalledAgentPack> {
+    let Ok(entries) = std::fs::read_dir(agent_packs_dir(project_root)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<InstalledAgentPack> = entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let root = e.path();
+            let raw = std::fs::read_to_string(root.join("agent_pack.json")).ok()?;
+            let manifest: AgentPackManifest = serde_json::from_str(&raw).ok()?;
+            Some(InstalledAgentPack {
+                id: manifest.id.clone(),
+                manifest,
+                root: root.display().to_string(),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// Where the archive comes from. A dialog inspects a source and then installs *that
+/// same source*, so both operations take one of these — any divergence between the
+/// two would be a divergence between what was approved and what was done.
+#[derive(Debug, Clone)]
+pub enum PackSource {
+    /// A registry URL. The pod refuses origins outside its allowlist.
+    Url(String),
+    /// A path on the *pod's* filesystem, not the client's.
+    Path(String),
+    /// Raw archive bytes, uploaded.
+    Bytes(Vec<u8>),
+}

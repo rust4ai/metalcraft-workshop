@@ -24,8 +24,9 @@ pub mod skills;
 pub mod watcher;
 
 pub use agents::{
-    AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
-    InstanceMemory, InstancePatch, RosterPersona,
+    AgentInstance, AgentPackManifest, AgentPackPreview, AgentPreset, AgentPresetDetail,
+    AgentPresetSummary, ConsentSummary, InstalledAgentPack, InstallReport, InstanceDetail,
+    InstanceMemory, InstancePatch, PackSource, RosterPersona, UninstallReport,
 };
 pub use api_tools::{ApiToolConfig, ApiToolSummary};
 pub use chat::{ChatDetail, ChatEvent, ChatSummary, ChatWireMessage, RunFlowResult};

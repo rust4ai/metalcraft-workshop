@@ -46,6 +46,82 @@
         }
       }
     },
+    "/api/v1/agent-packs/inspect": {
+      "post": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "post_inspect_agent_pack",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "Registry URL to download from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Local .agentpack path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The .agentpack archive",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What installing this would grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPackPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a valid agent pack",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The registry could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent-packs/install": {
       "post": {
         "tags": [
@@ -85,6 +161,26 @@
           },
           "400": {
             "description": "Rejected"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-packs/registries": {
+      "get": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "get_agent_pack_registries",
+        "responses": {
+          "200": {
+            "description": "Origins this pod will download an agent pack from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Registries"
+                }
+              }
+            }
           }
         }
       }
@@ -2829,6 +2925,62 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "AgentPackPreview": {
+        "type": "object",
+        "description": "What installing this pack would grant, and what it would change.\n\nThe install dialog's whole reason to exist. Without this a client could only\nshow a permission summary *after* installing, which is not consent — or parse the\narchive itself, duplicating the validator that has to be authoritative anyway.\n\nEverything here is derived from the archive's own bytes. The consent summary\nnever comes from what the author wrote about their pack.",
+        "required": [
+          "manifest",
+          "consent",
+          "content_sha256",
+          "source",
+          "missing_env",
+          "preset_collisions"
+        ],
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/ConsentSummary"
+          },
+          "content_sha256": {
+            "type": "string",
+            "description": "Content hash of the archive as received, so a UI can show what it is about to\ninstall and compare it against what a registry advertised."
+          },
+          "installed_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The version already installed under this id, if any. Present means this is an\nupgrade (or a downgrade), not a first install, and the dialog should say so."
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/AgentPackManifest"
+          },
+          "missing_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Credentials the pod does not have yet. A warning, not a blocker: the pack\ninstalls and its tools fail clearly at call time until `key_set` fixes it."
+          },
+          "preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The single preset this pack provides."
+          },
+          "preset_collisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preset slugs another installed pack already provides."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the bytes came from — a URL, a path, or `\"upload\"`."
           }
         }
       },
@@ -5605,6 +5757,21 @@
             "type": "string"
           },
           "packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Registries": {
+        "type": "object",
+        "description": "Where this pod is willing to fetch an agent pack from.\n\nReturned rather than only enforced so a UI can say what it accepts *before* the\nuser pastes a link and gets refused.",
+        "required": [
+          "origins"
+        ],
+        "properties": {
+          "origins": {
             "type": "array",
             "items": {
               "type": "string"

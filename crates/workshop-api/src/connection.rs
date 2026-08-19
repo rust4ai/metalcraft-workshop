@@ -13,8 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::agents::{
-    self, AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
-    InstanceMemory, InstancePatch,
+    self, AgentInstance, AgentPackPreview, AgentPreset, AgentPresetDetail, AgentPresetSummary,
+    InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory, InstancePatch, PackSource,
+    UninstallReport,
 };
 use crate::api_tools::{self, ApiToolConfig, ApiToolSummary};
 use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
@@ -191,6 +192,29 @@ pub trait ProjectConnection: Send + Sync {
         id: &str,
         limit: Option<usize>,
     ) -> anyhow::Result<InstanceMemory>;
+
+    // ---- Agent packs ----
+    //
+    // Installing is remote-only: it writes into the pod's content store and rebuilds
+    // its memory index. A local directory can be *read* for what is installed, but
+    // there is nothing there to install into.
+
+    async fn list_agent_packs(&self) -> anyhow::Result<Vec<InstalledAgentPack>>;
+    async fn get_agent_pack(&self, id: &str) -> anyhow::Result<InstalledAgentPack>;
+    /// Origins this pod will download a pack from, so a UI can say what it accepts
+    /// before someone pastes a link and gets refused.
+    async fn agent_pack_registries(&self) -> anyhow::Result<Vec<String>>;
+    /// What installing would grant — **without installing**. The install dialog's
+    /// reason to exist: showing a permission summary after the fact is not consent.
+    async fn inspect_agent_pack(&self, source: &PackSource) -> anyhow::Result<AgentPackPreview>;
+    async fn install_agent_pack(&self, source: &PackSource) -> anyhow::Result<InstallReport>;
+    async fn uninstall_agent_pack(
+        &self,
+        id: &str,
+        force: bool,
+    ) -> anyhow::Result<UninstallReport>;
+    /// Package one of this pod's own presets as a distributable archive.
+    async fn export_agent_pack(&self, preset: &str, version: &str) -> anyhow::Result<Vec<u8>>;
 
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>>;
     async fn get_chat(&self, id: &str) -> anyhow::Result<ChatDetail>;
@@ -467,6 +491,38 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Agent memory"))
     }
 
+    async fn list_agent_packs(&self) -> anyhow::Result<Vec<InstalledAgentPack>> {
+        Ok(agents::list_installed_packs(&self.root))
+    }
+    async fn get_agent_pack(&self, id: &str) -> anyhow::Result<InstalledAgentPack> {
+        agents::list_installed_packs(&self.root)
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| anyhow::anyhow!("agent pack '{id}' is not installed"))
+    }
+    async fn agent_pack_registries(&self) -> anyhow::Result<Vec<String>> {
+        // A directory has no opinion about registries; it just holds what was
+        // installed. Empty means "this backend cannot download", which the UI reads
+        // as "upload a file instead".
+        Ok(Vec::new())
+    }
+    async fn inspect_agent_pack(&self, _source: &PackSource) -> anyhow::Result<AgentPackPreview> {
+        Err(chat::not_supported_in_local_mode("Inspecting an agent pack"))
+    }
+    async fn install_agent_pack(&self, _source: &PackSource) -> anyhow::Result<InstallReport> {
+        Err(chat::not_supported_in_local_mode("Installing an agent pack"))
+    }
+    async fn uninstall_agent_pack(
+        &self,
+        _id: &str,
+        _force: bool,
+    ) -> anyhow::Result<UninstallReport> {
+        Err(chat::not_supported_in_local_mode("Uninstalling an agent pack"))
+    }
+    async fn export_agent_pack(&self, _preset: &str, _version: &str) -> anyhow::Result<Vec<u8>> {
+        Err(chat::not_supported_in_local_mode("Exporting an agent pack"))
+    }
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
         Err(chat::not_supported_in_local_mode("Chat"))
     }
@@ -691,6 +747,42 @@ impl RemoteConnection {
             .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
+
+    /// Build the POST for an agent-pack source. Shared by inspect and install so the
+    /// two cannot address different things.
+    ///
+    /// Uploading gets a longer timeout: an archive can be tens of megabytes over a
+    /// home connection, and the default is tuned for JSON.
+    fn pack_request(&self, path: &str, source: &PackSource) -> reqwest::RequestBuilder {
+        const UPLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+        match source {
+            PackSource::Url(url) => self
+                .post(&format!("{path}?url={}", urlencode(url)))
+                .timeout(UPLOAD_TIMEOUT),
+            PackSource::Path(p) => self.post(&format!("{path}?path={}", urlencode(p))),
+            PackSource::Bytes(bytes) => self
+                .post(path)
+                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                .body(bytes.clone())
+                .timeout(UPLOAD_TIMEOUT),
+        }
+    }
+}
+
+/// Percent-encode a query-parameter value. Small on purpose: the alternative is a
+/// URL crate for two call sites, and a pack URL containing `&` would otherwise be
+/// silently truncated into a different URL than the one the user approved.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 #[derive(Deserialize)]
@@ -1302,6 +1394,91 @@ impl ProjectConnection for RemoteConnection {
         };
         let resp = ok_or_err(self.get(&path).send().await?, "GET agent memory").await?;
         decode_json(resp, "GET agent memory").await
+    }
+
+    async fn list_agent_packs(&self) -> anyhow::Result<Vec<InstalledAgentPack>> {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(default)]
+            agent_packs: Vec<InstalledAgentPack>,
+        }
+        let resp = self.get("/api/v1/agent-packs").send().await?;
+        // An agent from before agent packs 404s — no packs, not a failure.
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp = ok_or_err(resp, "GET agent-packs").await?;
+        let w: Wrapper = decode_json(resp, "GET agent-packs").await?;
+        Ok(w.agent_packs)
+    }
+
+    async fn get_agent_pack(&self, id: &str) -> anyhow::Result<InstalledAgentPack> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/agent-packs/{id}")).send().await?,
+            "GET agent-pack",
+        )
+        .await?;
+        decode_json(resp, "GET agent-pack").await
+    }
+
+    async fn agent_pack_registries(&self) -> anyhow::Result<Vec<String>> {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(default)]
+            origins: Vec<String>,
+        }
+        let resp = self.get("/api/v1/agent-packs/registries").send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp = ok_or_err(resp, "GET agent-pack registries").await?;
+        let w: Wrapper = decode_json(resp, "GET agent-pack registries").await?;
+        Ok(w.origins)
+    }
+
+    async fn inspect_agent_pack(&self, source: &PackSource) -> anyhow::Result<AgentPackPreview> {
+        let resp = ok_or_err(
+            self.pack_request("/api/v1/agent-packs/inspect", source).send().await?,
+            "POST agent-pack inspect",
+        )
+        .await?;
+        decode_json(resp, "POST agent-pack inspect").await
+    }
+
+    async fn install_agent_pack(&self, source: &PackSource) -> anyhow::Result<InstallReport> {
+        let resp = ok_or_err(
+            self.pack_request("/api/v1/agent-packs/install", source).send().await?,
+            "POST agent-pack install",
+        )
+        .await?;
+        decode_json(resp, "POST agent-pack install").await
+    }
+
+    async fn uninstall_agent_pack(
+        &self,
+        id: &str,
+        force: bool,
+    ) -> anyhow::Result<UninstallReport> {
+        let path = format!("/api/v1/agent-packs/{id}?force={force}");
+        let resp = ok_or_err(self.delete(&path).send().await?, "DELETE agent-pack").await?;
+        decode_json(resp, "DELETE agent-pack").await
+    }
+
+    async fn export_agent_pack(&self, preset: &str, version: &str) -> anyhow::Result<Vec<u8>> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            preset: &'a str,
+            version: &'a str,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/agent-packs/export")
+                .json(&Body { preset, version })
+                .send()
+                .await?,
+            "POST agent-pack export",
+        )
+        .await?;
+        Ok(resp.bytes().await?.to_vec())
     }
 
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {

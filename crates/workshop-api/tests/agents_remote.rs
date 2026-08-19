@@ -13,7 +13,7 @@
 //! TEST_AGENT_URL=http://localhost:8801 TEST_AGENT_KEY=k \
 //!   cargo test -p workshop-api --test agents_remote
 //! ```
-use workshop_api::agents::InstancePatch;
+use workshop_api::agents::{InstancePatch, PackSource};
 use workshop_api::connection::{NewChat, ProjectConnection, RemoteConnection};
 
 fn connect() -> Option<RemoteConnection> {
@@ -205,4 +205,110 @@ async fn the_snapshot_carries_agents() {
     );
     assert!(snap.layout.has_agent_presets);
     assert!(snap.layout.has_agent_instances);
+}
+
+#[tokio::test]
+async fn an_agent_pack_can_be_inspected_before_it_is_installed() {
+    let conn = agent!();
+    let Ok(url) = std::env::var("TEST_AGENTPACK_URL") else {
+        eprintln!("skipping: TEST_AGENTPACK_URL not set (needs a registry the pod allowlists)");
+        return;
+    };
+
+    // The pod says what it will accept before anyone pastes a link.
+    let registries = conn.agent_pack_registries().await.expect("registries");
+    assert!(!registries.is_empty(), "a pod that can install must say from where");
+
+    // ── inspect grants nothing ──────────────────────────────────────────────
+    let before: Vec<String> =
+        conn.list_agent_packs().await.expect("list").into_iter().map(|p| p.id).collect();
+
+    let preview = conn
+        .inspect_agent_pack(&PackSource::Url(url.clone()))
+        .await
+        .expect("inspect a pack the pod is allowed to fetch");
+    assert!(!preview.manifest.id.is_empty());
+    assert!(preview.preset.is_some(), "an agent pack provides exactly one preset");
+    assert_eq!(preview.content_sha256.len(), 64, "the hash of what is about to be installed");
+    // The consent summary is what makes this a decision rather than a surprise.
+    assert!(
+        !preview.consent.domains.is_empty(),
+        "a pack with HTTP tools must disclose the origins it reaches"
+    );
+    assert!(!preview.consent.tools.is_empty());
+
+    let after: Vec<String> =
+        conn.list_agent_packs().await.expect("list").into_iter().map(|p| p.id).collect();
+    assert_eq!(before, after, "inspecting must not install");
+
+    // ── an origin the pod does not trust is refused ─────────────────────────
+    let err = conn
+        .inspect_agent_pack(&PackSource::Url("https://evil.example/x.agentpack".into()))
+        .await
+        .expect_err("an origin outside the allowlist must be refused");
+    assert!(format!("{err}").contains("origin"), "{err}");
+
+    // ── install, then the same inspect reports it as an upgrade ─────────────
+    let report = conn
+        .install_agent_pack(&PackSource::Url(url.clone()))
+        .await
+        .expect("install from the inspected url");
+    assert_eq!(report.id, preview.manifest.id);
+    assert_eq!(report.version, preview.manifest.version);
+
+    let again = conn.inspect_agent_pack(&PackSource::Url(url)).await.expect("re-inspect");
+    assert_eq!(
+        again.installed_version.as_deref(),
+        Some(report.version.as_str()),
+        "a second look must say this is already installed"
+    );
+
+    // The preset it provides is now something a chat can start as.
+    let presets = conn.list_agent_presets().await.expect("presets");
+    let slug = preview.preset.clone().unwrap();
+    assert!(
+        presets.iter().any(|p| p.slug == slug),
+        "installing a pack must make its agent pickable: {slug}"
+    );
+
+    // ── uninstall takes it away again ───────────────────────────────────────
+    let un = conn
+        .uninstall_agent_pack(&report.id, true)
+        .await
+        .expect("uninstall");
+    assert_eq!(un.id, report.id);
+    assert!(
+        un.packs_freed > 0,
+        "the last reference to its vendored packs should have been released"
+    );
+    assert!(
+        !conn.list_agent_packs().await.expect("list").iter().any(|p| p.id == report.id),
+        "an uninstalled pack must be gone"
+    );
+}
+
+#[tokio::test]
+async fn a_preset_round_trips_through_export_and_install() {
+    let conn = agent!();
+
+    // Export what this pod already is…
+    let bytes = conn
+        .export_agent_pack("general-agent", "9.9.9")
+        .await
+        .expect("export the default agent");
+    assert!(bytes.len() > 1000, "an archive should not be empty: {} bytes", bytes.len());
+
+    // …and the pod must accept its own output. An export the installer rejects is
+    // the failure mode worth guarding: both sides are ours, so nothing else would
+    // catch it.
+    let preview = conn
+        .inspect_agent_pack(&PackSource::Bytes(bytes))
+        .await
+        .expect("a pod must be able to read back what it exported");
+    assert_eq!(preview.manifest.version, "9.9.9");
+    assert_eq!(preview.preset.as_deref(), Some("general-agent"));
+    assert!(
+        preview.preset_collisions.contains(&"general-agent".to_string()),
+        "the seeded preset already owns this slug, and the dialog should say so"
+    );
 }

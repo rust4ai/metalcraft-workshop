@@ -36,6 +36,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-packs/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_inspect_agent_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-packs/install": {
         parameters: {
             query?: never;
@@ -46,6 +62,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_install_agent_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-packs/registries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_pack_registries"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1067,6 +1099,41 @@ export interface components {
             tags?: string[];
             version: string;
         };
+        /**
+         * @description What installing this pack would grant, and what it would change.
+         *
+         *     The install dialog's whole reason to exist. Without this a client could only
+         *     show a permission summary *after* installing, which is not consent — or parse the
+         *     archive itself, duplicating the validator that has to be authoritative anyway.
+         *
+         *     Everything here is derived from the archive's own bytes. The consent summary
+         *     never comes from what the author wrote about their pack.
+         */
+        AgentPackPreview: {
+            consent: components["schemas"]["ConsentSummary"];
+            /**
+             * @description Content hash of the archive as received, so a UI can show what it is about to
+             *     install and compare it against what a registry advertised.
+             */
+            content_sha256: string;
+            /**
+             * @description The version already installed under this id, if any. Present means this is an
+             *     upgrade (or a downgrade), not a first install, and the dialog should say so.
+             */
+            installed_version?: string | null;
+            manifest: components["schemas"]["AgentPackManifest"];
+            /**
+             * @description Credentials the pod does not have yet. A warning, not a blocker: the pack
+             *     installs and its tools fail clearly at call time until `key_set` fixes it.
+             */
+            missing_env: string[];
+            /** @description The single preset this pack provides. */
+            preset?: string | null;
+            /** @description Preset slugs another installed pack already provides. */
+            preset_collisions: string[];
+            /** @description Where the bytes came from — a URL, a path, or `"upload"`. */
+            source: string;
+        };
         AgentPreset: {
             avatar?: string | null;
             default_persona: string;
@@ -2030,6 +2097,15 @@ export interface components {
             name: string;
             packs: string[];
         };
+        /**
+         * @description Where this pod is willing to fetch an agent pack from.
+         *
+         *     Returned rather than only enforced so a UI can say what it accepts *before* the
+         *     user pastes a link and gets refused.
+         */
+        Registries: {
+            origins: string[];
+        };
         RestoreOutcome: {
             detail?: string | null;
             kind: string;
@@ -2213,6 +2289,54 @@ export interface operations {
             };
         };
     };
+    post_inspect_agent_pack: {
+        parameters: {
+            query?: {
+                /** @description Registry URL to download from */
+                url?: string;
+                /** @description Local .agentpack path */
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The .agentpack archive */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description What installing this would grant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPackPreview"];
+                };
+            };
+            /** @description Not a valid agent pack */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The registry could not be reached */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     post_install_agent_pack: {
         parameters: {
             query?: {
@@ -2243,6 +2367,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_agent_pack_registries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Origins this pod will download an agent pack from */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registries"];
+                };
             };
         };
     };
