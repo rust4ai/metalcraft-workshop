@@ -20,9 +20,19 @@ interface Props {
   snapshot: ProjectSnapshot;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /// Archive URL from a `metalcraft-workshop://install` deep link, passed straight
+  /// through to the install dialog.
+  deepLinkUrl?: string | null;
+  onDeepLinkConsumed?: () => void;
 }
 
-export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
+export default function PacksView({
+  snapshot,
+  selectedId,
+  onSelect,
+  deepLinkUrl,
+  onDeepLinkConsumed,
+}: Props) {
   const reportError = useReportError();
   const [packs, setPacks] = useState<PackSummary[] | null>(null);
 
@@ -84,7 +94,12 @@ export default function PacksView({ snapshot, selectedId, onSelect }: Props) {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-3xl space-y-3">
-        <AgentPacks snapshot={snapshot} onChanged={refresh} />
+        <AgentPacks
+          snapshot={snapshot}
+          onChanged={refresh}
+          deepLinkUrl={deepLinkUrl}
+          onDeepLinkConsumed={onDeepLinkConsumed}
+        />
 
         <h2 className="text-sm font-semibold text-accent pt-4">Integration packs</h2>
         <p className="text-xs text-gray-500">
@@ -334,9 +349,13 @@ function Section({ title, items }: { title: string; items: string[] }) {
 function AgentPacks({
   snapshot,
   onChanged,
+  deepLinkUrl,
+  onDeepLinkConsumed,
 }: {
   snapshot: ProjectSnapshot;
   onChanged: () => void;
+  deepLinkUrl?: string | null;
+  onDeepLinkConsumed?: () => void;
 }) {
   const reportError = useReportError();
   const [packs, setPacks] = useState<InstalledAgentPack[] | null>(null);
@@ -370,6 +389,8 @@ function AgentPacks({
 
       <InstallAgentPack
         registries={registries}
+        deepLinkUrl={deepLinkUrl}
+        onDeepLinkConsumed={onDeepLinkConsumed}
         onInstalled={() => {
           refresh();
           onChanged();
@@ -419,9 +440,17 @@ function AgentPacks({
 function InstallAgentPack({
   registries,
   onInstalled,
+  deepLinkUrl,
+  onDeepLinkConsumed,
 }: {
   registries: string[];
   onInstalled: () => void;
+  /// An archive URL from a `metalcraft-workshop://install` deep link. It seeds the
+  /// field and triggers a review — never an install. Somebody clicking a link on a
+  /// web page has not seen the consent summary yet, which is the entire reason the
+  /// review step exists.
+  deepLinkUrl?: string | null;
+  onDeepLinkConsumed?: () => void;
 }) {
   const reportError = useReportError();
   const [url, setUrl] = useState("");
@@ -450,6 +479,16 @@ function InstallAgentPack({
       setBusy(false);
     }
   };
+
+  // A deep link arrives asynchronously and possibly before this view is mounted,
+  // so react to it rather than reading it once.
+  useEffect(() => {
+    if (!deepLinkUrl) return;
+    setUrl(deepLinkUrl);
+    void inspect({ kind: "url", url: deepLinkUrl });
+    onDeepLinkConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkUrl]);
 
   /// Pick an `.agentpack` from this machine. The Rust side reads it and uploads the
   /// bytes — the pod may be elsewhere and cannot open a path we hand it.

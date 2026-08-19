@@ -100,6 +100,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-packs/{id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/v1/agent-packs/{id}/update`
+         * @description Separate from install because the *consequences* are different: install adds an
+         *     agent, update changes agents that already exist and that somebody may be talking
+         *     to right now. The report says what followed — and, crucially, names any agent
+         *     whose persona or preset the new version withdrew, so the two silent failure modes
+         *     become two lines in a dialog.
+         */
+        post: operations["post_update_agent_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent-presets": {
         parameters: {
             query?: never;
@@ -174,6 +198,29 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["post_instance_conversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/instances/{id}/flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * `GET /api/v1/agents/instances/{id}/flows` — what this agent is scheduled to do.
+         * @description The same list `GET …/instances/{id}` embeds, on its own route. It is worth its own
+         *     endpoint because it is the question somebody asks right before they decide whether
+         *     to trust a background agent, and answering it should not mean fetching an agent's
+         *     whole conversation index.
+         */
+        get: operations["get_agent_instance_flows"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1057,6 +1104,14 @@ export interface components {
             name: string;
             origin?: components["schemas"]["InstanceOrigin"];
             /**
+             * @description Set when the agent pack that provided this agent's preset withdrew it — on
+             *     update or on a forced uninstall. The agent keeps its memory and its
+             *     conversations and goes on working against a frozen copy of the preset; this
+             *     records what happened, so a UI can say so rather than presenting a
+             *     pack-provided agent that is quietly no longer pack-provided.
+             */
+            orphaned_from?: string | null;
+            /**
              * @description Ephemeral instances recall against the preset but never accrue a durable
              *     memory, and are reaped after a TTL. Naming one makes it persistent.
              */
@@ -1066,6 +1121,12 @@ export interface components {
              *     within its roster.
              */
             persona: string;
+            /**
+             * @description Set when an update withdrew the persona this agent was using and it fell back
+             *     to the preset's default. Reported rather than silent: the agent's voice
+             *     changed, and nobody asked for that.
+             */
+            persona_fallback_from?: string | null;
         };
         AgentPackManifest: {
             author?: null | components["schemas"]["Author"];
@@ -1157,6 +1218,25 @@ export interface components {
             pack_id?: string | null;
             read_only?: boolean;
         };
+        /** @description The resolved content of the arm dialog. */
+        ArmConsent: {
+            /** @description Seed memories the agent starts from. It accumulates more on every run. */
+            base_memories: number;
+            /** @description Origins its tools can reach. */
+            domains: string[];
+            /**
+             * @description Credentials the pod does not have — those tools will fail at 3am rather than
+             *     at a moment anyone is looking.
+             */
+            missing_env: string[];
+            /** @description Tools that can change something on the other end. */
+            mutating_tools: string[];
+            /** @description Display name of the preset this flow runs as. */
+            preset_name: string;
+            /** @description Credentials it will use. */
+            requires_env: string[];
+            tool_count: number;
+        };
         ArmScheduleRequest: {
             /**
              * @description Attach to an existing agent instead of minting one — e.g. run the briefer as
@@ -1188,6 +1268,16 @@ export interface components {
         Channel: {
             /** @description The gateway number bound to this channel, if any. */
             active_number?: string | null;
+            /**
+             * @description The agent that answers inbound on this channel. Its instance — and everything
+             *     that instance remembers — is what gives the channel continuity across idle
+             *     resets. Absent means the pod default.
+             *
+             *     Without this a channel could only ever be the default agent: installing an
+             *     agent pack and pointing an SMS number at it was not expressible, and the
+             *     channel's memory base was one that had never been built.
+             */
+            agent_preset?: string | null;
             /** @description Whether the channel has completed a gateway connect (link fields present). */
             connected?: boolean;
             enabled?: boolean;
@@ -1201,7 +1291,7 @@ export interface components {
             /** @description Model override for inbound runs on this channel. */
             model?: string | null;
             name: string;
-            /** @description Persona that answers inbound on this channel (default: orchestrator). */
+            /** @description Persona that answers inbound on this channel (default: the agent's own). */
             persona?: string | null;
             slug: string;
             url: string;
@@ -1446,6 +1536,14 @@ export interface components {
             armed: components["schemas"]["ArmedSchedule"][];
             /** @description True when the preset was chosen deliberately rather than defaulted. */
             bound: boolean;
+            /**
+             * @description Everything the arm dialog needs to state what arming this actually permits.
+             *
+             *     Arming is the second consent moment, and the sharper one: a scheduled flow
+             *     acts **while nobody is watching**, so a mutating tool inside one is a bigger
+             *     commitment than the same tool in a chat where an approval prompt exists.
+             */
+            consent: components["schemas"]["ArmConsent"];
             flow_id: string;
             /** @description Personas the flow names, and whether the preset can reach each one. */
             personas: components["schemas"]["FlowPersonaCheck"][];
@@ -1686,6 +1784,12 @@ export interface components {
          */
         InstallReport: {
             consent: components["schemas"]["ConsentSummary"];
+            /**
+             * @description Flows the pack shipped. **Every one lands disabled and unarmed** — installing
+             *     an identity must not start background work, and arming is the separate consent
+             *     moment that mints the agent to run it.
+             */
+            flows_installed_unscheduled?: string[];
             id: string;
             memories_indexed: number;
             /**
@@ -1706,6 +1810,13 @@ export interface components {
         };
         /** @description The result of a successful install: what landed + what it still needs. */
         InstallResult: {
+            /**
+             * @description The agent preset this flow was bound to, chosen because its roster covers
+             *     every persona the flow names. `None` means no installed preset can reach them
+             *     all — the flow is saved and runnable by hand, but cannot be armed until one
+             *     can, which is worth saying at install rather than discovering later.
+             */
+            agent_preset?: string | null;
             dependencies: components["schemas"]["DependencyReport"];
             flow: components["schemas"]["InstalledFlow"];
         };
@@ -1729,6 +1840,9 @@ export interface components {
              * @description What this agent is scheduled to do — the flow schedules armed to it. A pod
              *     could not previously answer that question about a background agent.
              */
+            scheduled: components["schemas"]["ScheduledFlowRef"][];
+        };
+        InstanceFlows: {
             scheduled: components["schemas"]["ScheduledFlowRef"][];
         };
         InstanceList: {
@@ -1930,6 +2044,14 @@ export interface components {
             /** @description Start this conversation as a specific persona from the agent's roster. */
             persona_slug?: string | null;
         };
+        /** @description One agent whose preset was withdrawn by an update. */
+        Orphaned: {
+            agent_preset: string;
+            /** @description Personas and skills copied into the user-local layer so the agent still runs. */
+            frozen: string[];
+            instance: string;
+            name: string;
+        };
         /** @description Outcome of trying to satisfy one pack requirement of a flow. */
         PackInstallOutcome: {
             /** @description Human-readable detail (why it was skipped/failed, or the resolved version). */
@@ -1997,6 +2119,15 @@ export interface components {
              *     are never force-upgraded. See `seed::write_versioned_seeds`.
              */
             version?: string | null;
+        };
+        /** @description One agent whose persona was withdrawn by an update. */
+        PersonaFallback: {
+            /** @description The persona the new version no longer provides. */
+            from: string;
+            instance: string;
+            name: string;
+            /** @description The preset's new default, which it now uses instead. */
+            to: string;
         };
         /**
          * @description What a persona is allowed to do inside a preset.
@@ -2101,10 +2232,20 @@ export interface components {
          * @description Where this pod is willing to fetch an agent pack from.
          *
          *     Returned rather than only enforced so a UI can say what it accepts *before* the
-         *     user pastes a link and gets refused.
+         *     user pastes a link and gets refused — and so a picker can offer the configured
+         *     hosts by name rather than making somebody remember an origin.
          */
         Registries: {
+            default: string;
+            /** @description Bare origins, kept for clients written against the earlier shape. */
             origins: string[];
+            registries: components["schemas"]["RegistryView"][];
+        };
+        RegistryView: {
+            is_default: boolean;
+            name: string;
+            trust: components["schemas"]["Trust"];
+            url: string;
         };
         RestoreOutcome: {
             detail?: string | null;
@@ -2215,6 +2356,11 @@ export interface components {
             file: string;
             kind: string;
         };
+        /**
+         * @description How much a host's word is worth.
+         * @enum {string}
+         */
+        Trust: "first-party" | "verified-only" | "explicit";
         UninstallPackResult: {
             /**
              * @description Installed flows that still reference the removed pack — they'll fail to resolve
@@ -2239,6 +2385,19 @@ export interface components {
             /** @description New secret; omit or leave empty to keep the existing one. */
             secret?: string | null;
             url: string;
+        };
+        /** @description What an update did, beyond what the install did. */
+        UpdateReport: {
+            from_version: string;
+            id: string;
+            install: components["schemas"]["InstallReport"];
+            /** @description Agents whose shipped knowledge now points at the new version's base layer. */
+            memory_bases_repointed: string[];
+            /** @description Live agents whose preset was withdrawn (§12.3). */
+            orphaned: components["schemas"]["Orphaned"][];
+            /** @description Live agents whose persona was withdrawn and fell back (§12.3). */
+            personas_fell_back: components["schemas"]["PersonaFallback"][];
+            to_version: string;
         };
     };
     responses: never;
@@ -2442,6 +2601,41 @@ export interface operations {
             };
             /** @description In use */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_update_agent_pack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The installed agent pack to update */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The newer .agentpack, or use ?url=/?ref=/?path= */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description Update report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateReport"];
+                };
+            };
+            /** @description Not installed, older, or invalid */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2712,6 +2906,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChatSummary"];
                 };
+            };
+        };
+    };
+    get_agent_instance_flows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Flow schedules armed to this agent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceFlows"];
+                };
+            };
+            /** @description No such agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

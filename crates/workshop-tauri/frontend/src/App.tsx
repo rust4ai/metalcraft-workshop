@@ -37,7 +37,14 @@ export default function App() {
 
   // Auto-dismiss the error toast so a transient failure doesn't sit on screen
   // forever. It stays clickable/closable for as long as it's shown.
-  const { lastError, clearError } = workshop;
+  const { lastError, clearError, pendingInstallUrl, clearPendingInstall } = workshop;
+
+  // A deep link is a request to look at a pack, so send the user where that
+  // happens. Switching sections here rather than inside PacksView means the view is
+  // mounted by the time it needs to react to the URL.
+  useEffect(() => {
+    if (pendingInstallUrl) setSection("packs");
+  }, [pendingInstallUrl]);
   useEffect(() => {
     if (!lastError) return;
     const t = window.setTimeout(clearError, 5000);
@@ -196,6 +203,8 @@ export default function App() {
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              deepLinkUrl={pendingInstallUrl}
+              onDeepLinkConsumed={clearPendingInstall}
             />
           )}
           {section === "gateway" && (

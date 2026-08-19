@@ -18,6 +18,10 @@ export function useWorkshop() {
   // Diagnostics session the current error belongs to, if any — lets the error
   // banner deep-link to that session's logs.
   const [lastErrorSessionId, setLastErrorSessionId] = useState<string | null>(null);
+  // An archive URL handed to us by a `metalcraft-workshop://install` deep link.
+  // Held here rather than acted on: the Packs view picks it up and runs the same
+  // inspect-then-approve dialog a local file gets.
+  const [pendingInstallUrl, setPendingInstallUrl] = useState<string | null>(null);
   // Live lists for the Chats and Sessions tabs. Unlike the rest of the
   // sidebar (driven by the one-shot snapshot), these reflect agent-side state
   // that changes outside any workshop save — so they're fetched fresh from the
@@ -79,6 +83,9 @@ export function useWorkshop() {
           case "error":
             setLastError(payload.message);
             setLastErrorSessionId(null);
+            break;
+          case "install_requested":
+            setPendingInstallUrl(payload.url);
             break;
         }
       });
@@ -215,6 +222,8 @@ export function useWorkshop() {
     remoteBaseUrl,
     lastError,
     lastErrorSessionId,
+    pendingInstallUrl,
+    clearPendingInstall: () => setPendingInstallUrl(null),
     clearError: () => {
       setLastError(null);
       setLastErrorSessionId(null);

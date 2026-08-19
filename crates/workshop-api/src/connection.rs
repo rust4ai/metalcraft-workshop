@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 
 use crate::agents::{
     self, AgentInstance, AgentPackPreview, AgentPreset, AgentPresetDetail, AgentPresetSummary,
-    InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory, InstancePatch, PackSource,
-    UninstallReport,
+    FlowBinding, InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory, InstancePatch,
+    PackSource, UninstallReport,
 };
 use crate::api_tools::{self, ApiToolConfig, ApiToolSummary};
 use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
@@ -192,6 +192,34 @@ pub trait ProjectConnection: Send + Sync {
         id: &str,
         limit: Option<usize>,
     ) -> anyhow::Result<InstanceMemory>;
+
+    // ---- Flow bindings ----
+    //
+    // Which agent a flow runs as, and which agent instance each of its schedules
+    // actually runs as once armed. Arming is the second consent moment — the first
+    // being install — and the sharper one, because a scheduled flow acts while
+    // nobody is watching.
+
+    async fn flow_binding(&self, flow_id: &str) -> anyhow::Result<FlowBinding>;
+    async fn bind_flow_preset(
+        &self,
+        flow_id: &str,
+        agent_preset: Option<&str>,
+    ) -> anyhow::Result<FlowBinding>;
+    /// Arm a schedule, minting the agent it runs as — or attaching to an existing
+    /// one, which is how you get a briefer that knows what you discussed yesterday.
+    async fn arm_schedule(
+        &self,
+        flow_id: &str,
+        schedule_id: &str,
+        instance_id: Option<&str>,
+    ) -> anyhow::Result<AgentInstance>;
+    /// Disarm. The agent and everything it learned survive; re-arming reuses it.
+    async fn disarm_schedule(
+        &self,
+        flow_id: &str,
+        schedule_id: &str,
+    ) -> anyhow::Result<FlowBinding>;
 
     // ---- Agent packs ----
     //
@@ -482,6 +510,37 @@ impl ProjectConnection for LocalConnection {
     async fn delete_agent_instance(&self, _id: &str) -> anyhow::Result<usize> {
         Err(chat::not_supported_in_local_mode("Deleting an agent"))
     }
+    async fn flow_binding(&self, _flow_id: &str) -> anyhow::Result<FlowBinding> {
+        // The binding is a file, but the consent summary it carries is derived from
+        // the pack store at request time and the memory base is the agent's — so
+        // half an answer here would be worse than none.
+        Err(chat::not_supported_in_local_mode("Flow bindings"))
+    }
+    async fn bind_flow_preset(
+        &self,
+        _flow_id: &str,
+        _agent_preset: Option<&str>,
+    ) -> anyhow::Result<FlowBinding> {
+        Err(chat::not_supported_in_local_mode("Binding a flow to an agent"))
+    }
+    async fn arm_schedule(
+        &self,
+        _flow_id: &str,
+        _schedule_id: &str,
+        _instance_id: Option<&str>,
+    ) -> anyhow::Result<AgentInstance> {
+        // Arming mints an agent and allocates its memory layers, which is the
+        // agent's job, not a file writer's.
+        Err(chat::not_supported_in_local_mode("Arming a schedule"))
+    }
+    async fn disarm_schedule(
+        &self,
+        _flow_id: &str,
+        _schedule_id: &str,
+    ) -> anyhow::Result<FlowBinding> {
+        Err(chat::not_supported_in_local_mode("Disarming a schedule"))
+    }
+
     async fn agent_instance_memory(
         &self,
         _id: &str,
@@ -1403,6 +1462,59 @@ impl ProjectConnection for RemoteConnection {
         };
         let resp = ok_or_err(self.get(&path).send().await?, "GET agent memory").await?;
         decode_json(resp, "GET agent memory").await
+    }
+
+    async fn flow_binding(&self, flow_id: &str) -> anyhow::Result<FlowBinding> {
+        let path = format!("/api/v1/flows/{}/binding", urlencode(flow_id));
+        let resp = ok_or_err(self.get(&path).send().await?, "GET flow binding").await?;
+        decode_json(resp, "GET flow binding").await
+    }
+
+    async fn bind_flow_preset(
+        &self,
+        flow_id: &str,
+        agent_preset: Option<&str>,
+    ) -> anyhow::Result<FlowBinding> {
+        let path = format!("/api/v1/flows/{}/binding", urlencode(flow_id));
+        let resp = ok_or_err(
+            self.put(&path).json(&serde_json::json!({ "agent_preset": agent_preset })).send().await?,
+            "PUT flow binding",
+        )
+        .await?;
+        decode_json(resp, "PUT flow binding").await
+    }
+
+    async fn arm_schedule(
+        &self,
+        flow_id: &str,
+        schedule_id: &str,
+        instance_id: Option<&str>,
+    ) -> anyhow::Result<AgentInstance> {
+        let path = format!(
+            "/api/v1/flows/{}/schedules/{}/arm",
+            urlencode(flow_id),
+            urlencode(schedule_id)
+        );
+        let resp = ok_or_err(
+            self.post(&path).json(&serde_json::json!({ "instance_id": instance_id })).send().await?,
+            "POST arm schedule",
+        )
+        .await?;
+        decode_json(resp, "POST arm schedule").await
+    }
+
+    async fn disarm_schedule(
+        &self,
+        flow_id: &str,
+        schedule_id: &str,
+    ) -> anyhow::Result<FlowBinding> {
+        let path = format!(
+            "/api/v1/flows/{}/schedules/{}/arm",
+            urlencode(flow_id),
+            urlencode(schedule_id)
+        );
+        let resp = ok_or_err(self.delete(&path).send().await?, "DELETE arm schedule").await?;
+        decode_json(resp, "DELETE arm schedule").await
     }
 
     async fn list_agent_packs(&self) -> anyhow::Result<Vec<InstalledAgentPack>> {

@@ -29,6 +29,9 @@ export type AgentPreset = S["AgentPreset"];
 /// list item is the type a UI actually holds.
 export type AgentInstance = S["InstanceListItem"];
 export type InstanceOrigin = S["InstanceOrigin"];
+/// Which agent a flow runs as, plus everything the arm dialog has to state.
+export type FlowBinding = S["FlowBindingView"];
+export type ArmConsent = S["ArmConsent"];
 export type InstanceMemory = S["InstanceMemoryView"];
 export type MemorySample = S["MemorySample"];
 export type RosterPersona = S["RosterPersona"];
@@ -308,7 +311,11 @@ export type WorkshopEvent =
   | ({ type: "snapshot" } & ProjectSnapshot)
   | { type: "file_changed"; path: string; kind: FileKind }
   | { type: "save_ok"; kind: FileKind; id: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // A `metalcraft-workshop://install?url=…` deep link, from a registry page.
+  // Carries the archive URL only — the app still inspects and asks, because
+  // arriving from a web page is not consent.
+  | { type: "install_requested"; url: string };
 
 // Recents are persisted by the Tauri layer as a tagged union (RecentEntry in
 // main.rs). Keep in sync.

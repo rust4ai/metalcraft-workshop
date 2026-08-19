@@ -212,6 +212,72 @@ pub struct ScheduledFlowRef {
     pub schedule_ids: Vec<String>,
 }
 
+/// Which agent a flow runs as, plus everything the arm dialog has to state.
+///
+/// A flow may only name personas from its preset's roster. That containment rule is
+/// what makes [`ArmConsent`] constructible at all — if the graph could reach any
+/// persona on the pod, "this flow can reach these domains" would be a guess.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowBinding {
+    pub flow_id: String,
+    /// Always populated: an unbound flow resolves to the default agent, which is what
+    /// it effectively already was.
+    pub preset: String,
+    /// True when the preset was chosen deliberately rather than defaulted.
+    #[serde(default)]
+    pub bound: bool,
+    #[serde(default)]
+    pub personas: Vec<FlowPersonaCheck>,
+    #[serde(default)]
+    pub armed: Vec<ArmedSchedule>,
+    #[serde(default)]
+    pub consent: ArmConsent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowPersonaCheck {
+    pub slug: String,
+    #[serde(default)]
+    pub allowed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArmedSchedule {
+    pub schedule_id: String,
+    pub instance_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_name: Option<String>,
+}
+
+/// The resolved content of the arm dialog — the second consent moment, and the
+/// sharper of the two: a scheduled flow acts **while nobody is watching**, so a tool
+/// that writes is a materially bigger commitment here than the same tool in a chat
+/// where an approval prompt exists.
+///
+/// Every field is derived on the agent side from resolved data — the domains come
+/// from the vendored tools' own definitions, never from anything an author wrote
+/// about them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ArmConsent {
+    #[serde(default)]
+    pub preset_name: String,
+    #[serde(default)]
+    pub domains: Vec<String>,
+    #[serde(default)]
+    pub requires_env: Vec<String>,
+    /// Credentials the pod does not have. Those tools fail at 3am rather than at a
+    /// moment anyone is looking, which is exactly why this belongs on the dialog.
+    #[serde(default)]
+    pub missing_env: Vec<String>,
+    #[serde(default)]
+    pub mutating_tools: Vec<String>,
+    #[serde(default)]
+    pub tool_count: usize,
+    /// Seed memories the agent starts from; it accumulates more on every run.
+    #[serde(default)]
+    pub base_memories: usize,
+}
+
 /// What an agent knows: the shared base it inherited from its preset, plus what it
 /// has learned since.
 ///

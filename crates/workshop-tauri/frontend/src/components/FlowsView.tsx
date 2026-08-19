@@ -21,6 +21,9 @@ import "@xyflow/react/dist/style.css";
 import { useReportError } from "../hooks/useReportError";
 import V2Node from "./flow/V2Node";
 import type {
+  AgentInstance,
+  AgentPresetSummary,
+  FlowBinding,
   ProjectSnapshot,
   SavedFlow,
   FlowScheduleSpec,
@@ -987,6 +990,26 @@ function SchedulesPanel({
   onChange: (patch: Partial<SavedFlow>) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [binding, setBinding] = useState<FlowBinding | null>(null);
+  const [presets, setPresets] = useState<AgentPresetSummary[]>([]);
+  const reportError = useReportError();
+
+  const loadBinding = useCallback(() => {
+    // A pod predating flow bindings errors here; that is not a failure, it just
+    // means there is no agent to show.
+    invoke<FlowBinding>("flow_binding", { flowId: flow.id })
+      .then(setBinding)
+      .catch(() => setBinding(null));
+  }, [flow.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    loadBinding();
+    invoke<AgentPresetSummary[]>("list_agent_presets")
+      .then(setPresets)
+      .catch(() => setPresets([]));
+  }, [open, loadBinding]);
+
   const stored = flow.schedules ?? [];
   // Show the stored array, or materialize a legacy entry-node schedule so it's
   // visible/editable. Rows aren't persisted until the user edits (which also
@@ -1028,13 +1051,35 @@ function SchedulesPanel({
               A flow can run on several schedules — e.g. daily at 9:00 AM and weekly on Tuesday.
             </p>
           )}
-          {rows.map((s, i) => (
-            <SchedulesRow
-              key={i}
-              s={s}
-              onChange={(patch) => update(i, patch)}
-              onRemove={() => setRows(rows.filter((_, j) => j !== i))}
+          {binding && (
+            <AgentBindingRow
+              binding={binding}
+              presets={presets}
+              onRebind={async (slug) => {
+                try {
+                  setBinding(
+                    await invoke<FlowBinding>("bind_flow_preset", {
+                      flowId: flow.id,
+                      agentPreset: slug || null,
+                    }),
+                  );
+                } catch (e) {
+                  reportError("bind_flow_preset", e);
+                }
+              }}
             />
+          )}
+          {rows.map((s, i) => (
+            <div key={i} className="space-y-1">
+              <SchedulesRow
+                s={s}
+                onChange={(patch) => update(i, patch)}
+                onRemove={() => setRows(rows.filter((_, j) => j !== i))}
+              />
+              {binding && (
+                <ArmRow flow={flow} schedule={s} binding={binding} onChanged={loadBinding} />
+              )}
+            </div>
           ))}
           <button
             onClick={add}
@@ -1923,6 +1968,246 @@ function FlowTemplatePicker({
         <button
           onClick={onCancel}
           className="text-xs text-gray-500 hover:text-gray-300"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Which agent a flow runs as, and arming it ────────────────────────────────
+
+/**
+ * The flow's agent.
+ *
+ * A flow may only name personas from its preset's roster — the rule that makes the
+ * arm summary below constructible at all. If the graph could reach any persona on the
+ * pod, "this can reach these domains" would be a guess rather than a statement.
+ */
+function AgentBindingRow({
+  binding,
+  presets,
+  onRebind,
+}: {
+  binding: FlowBinding;
+  presets: AgentPresetSummary[];
+  onRebind: (slug: string) => void | Promise<void>;
+}) {
+  const unreachable = binding.personas.filter((p) => !p.allowed);
+  return (
+    <div className="rounded border border-surface-3 bg-surface-2 p-2 space-y-1">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-gray-400">Runs as</span>
+        <select
+          value={binding.preset}
+          onChange={(e) => void onRebind(e.target.value)}
+          className="bg-surface-1 border border-surface-3 rounded px-2 py-1 text-gray-200"
+        >
+          {presets.length === 0 && <option value={binding.preset}>{binding.preset}</option>}
+          {presets.map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {!binding.bound && <span className="text-gray-600">(the default agent)</span>}
+      </div>
+      <p className="text-[11px] text-gray-500">
+        This agent decides which personas the graph may call, and its memory is where
+        each run's work accumulates.
+      </p>
+      {unreachable.length > 0 && (
+        <p className="text-[11px] text-amber-400">
+          {binding.preset} cannot reach {unreachable.map((p) => p.slug).join(", ")} — this
+          flow cannot be armed until you pick an agent that can.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Arming one schedule — the second consent moment, and the sharper one.
+ *
+ * Installing an agent has a dialog. Arming had nothing, and a scheduled flow acts
+ * **while nobody is watching**: a tool that writes is a materially bigger commitment
+ * here than the same tool in a chat where an approval prompt exists. Everything shown
+ * is derived by the agent from resolved data — the domains come from the vendored
+ * tools' own definitions, never from anything an author wrote about them.
+ */
+function ArmRow({
+  flow,
+  schedule,
+  binding,
+  onChanged,
+}: {
+  flow: SavedFlow;
+  schedule: FlowScheduleSpec;
+  binding: FlowBinding;
+  onChanged: () => void;
+}) {
+  const reportError = useReportError();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [agents, setAgents] = useState<AgentInstance[]>([]);
+  const [runAs, setRunAs] = useState("");
+
+  const armed = binding.armed.find((a) => a.schedule_id === schedule.id);
+  const c = binding.consent;
+  const blocked = binding.personas.some((p) => !p.allowed);
+
+  useEffect(() => {
+    if (!open) return;
+    invoke<AgentInstance[]>("list_agent_instances")
+      .then(setAgents)
+      .catch(() => setAgents([]));
+  }, [open]);
+
+  const run = async (fn: () => Promise<unknown>, label: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      reportError(label, e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (armed) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 px-2 text-[11px]">
+        <span className="rounded bg-green-900/40 px-1.5 py-0.5 text-green-300">Armed</span>
+        <span className="text-gray-400">
+          runs as <span className="text-gray-200">{armed.instance_name ?? armed.instance_id}</span>
+        </span>
+        <button
+          className="text-gray-400 underline hover:text-gray-200"
+          disabled={busy}
+          onClick={() =>
+            void run(
+              () =>
+                invoke("disarm_schedule", { flowId: flow.id, scheduleId: schedule.id }),
+              "disarm_schedule",
+            )
+          }
+        >
+          Disarm
+        </button>
+        <span className="text-gray-600">Disarming keeps the agent and what it has learned.</span>
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 px-2 text-[11px]">
+        <span className="text-gray-500">Not armed</span>
+        <button
+          className="text-gray-400 underline hover:text-gray-200 disabled:no-underline disabled:text-gray-600"
+          disabled={blocked}
+          onClick={() => setOpen(true)}
+        >
+          Arm this schedule…
+        </button>
+        <span className="text-gray-600">
+          {blocked
+            ? "Pick an agent that can reach this flow's personas first."
+            : "Arming is what creates the agent that runs it."}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded border border-surface-3 bg-surface-1 p-3 text-[11px] space-y-2">
+      <div className="text-gray-200 font-medium">
+        Arm “{schedule.name || schedule.id}” — {scheduleSummary(schedule)}
+      </div>
+
+      <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-1">
+        <dt className="text-gray-500">Runs as</dt>
+        <dd>
+          <select
+            value={runAs}
+            onChange={(e) => setRunAs(e.target.value)}
+            className="w-full bg-surface-2 border border-surface-3 rounded px-2 py-1 text-gray-200"
+          >
+            <option value="">
+              A new agent — “{c.preset_name || binding.preset} — {schedule.name || flow.name}”
+            </option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} (existing)
+              </option>
+            ))}
+          </select>
+        </dd>
+
+        <dt className="text-gray-500">Personas</dt>
+        <dd className="text-gray-300">
+          {binding.personas.map((p) => p.slug).join(" → ") || "—"}
+        </dd>
+
+        <dt className="text-gray-500">Can reach</dt>
+        <dd className="text-gray-300">
+          {c.domains.length ? c.domains.join(", ") : "nothing outside this pod"}
+        </dd>
+
+        <dt className="text-gray-500">Uses keys</dt>
+        <dd className="text-gray-300">
+          {c.requires_env.length ? c.requires_env.join(", ") : "none"}
+          {c.missing_env.length > 0 && (
+            <span className="text-amber-400"> — {c.missing_env.join(", ")} not set yet</span>
+          )}
+        </dd>
+
+        <dt className="text-gray-500">Will</dt>
+        <dd>
+          {c.mutating_tools.length === 0 ? (
+            <span className="text-gray-300">
+              only read ({c.tool_count} tools, none of which write)
+            </span>
+          ) : (
+            <span className="text-amber-400">
+              change things — {c.mutating_tools.join(", ")} can write, unattended
+            </span>
+          )}
+        </dd>
+
+        <dt className="text-gray-500">Memory</dt>
+        <dd className="text-gray-300">
+          {c.base_memories > 0
+            ? `starts from ${c.base_memories} knowledge entries, and accumulates each run`
+            : "starts empty, and accumulates each run"}
+        </dd>
+      </dl>
+
+      <div className="flex items-center gap-2">
+        <button
+          className="px-2 py-1 bg-accent/20 border border-accent/40 rounded text-accent disabled:opacity-50"
+          disabled={busy}
+          onClick={() =>
+            void run(
+              () =>
+                invoke("arm_schedule", {
+                  flowId: flow.id,
+                  scheduleId: schedule.id,
+                  instanceId: runAs || null,
+                }),
+              "arm_schedule",
+            )
+          }
+        >
+          Arm
+        </button>
+        <button
+          className="px-2 py-1 bg-surface-2 border border-surface-3 rounded text-gray-300"
+          disabled={busy}
+          onClick={() => setOpen(false)}
         >
           Cancel
         </button>

@@ -5,13 +5,14 @@ use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
     agents::{
         AgentInstance, AgentPackPreview, AgentPreset, AgentPresetDetail, AgentPresetSummary,
-        InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory, InstancePatch,
-        PackSource, UninstallReport,
+        FlowBinding, InstallReport, InstalledAgentPack, InstanceDetail, InstanceMemory,
+        InstancePatch, PackSource, UninstallReport,
     },
     api_tools::{ApiToolConfig, ApiToolSummary},
     chat::{ChatDetail, ChatEvent, ChatSummary, RunFlowResult},
@@ -848,6 +849,57 @@ async fn export_agent_pack(
     Ok(bytes.len())
 }
 
+/// Which agent a flow runs as, plus what arming it would actually permit.
+///
+/// The consent summary rides along with the binding rather than being a second call:
+/// a dialog that has to make two requests to say what it is asking about will
+/// eventually render half of it.
+#[tauri::command]
+async fn flow_binding(
+    flow_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<FlowBinding, String> {
+    let conn = require_connection(&state)?;
+    conn.flow_binding(&flow_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn bind_flow_preset(
+    flow_id: String,
+    agent_preset: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<FlowBinding, String> {
+    let conn = require_connection(&state)?;
+    conn.bind_flow_preset(&flow_id, agent_preset.as_deref()).await.map_err(|e| e.to_string())
+}
+
+/// **Arming is what creates the agent.** Installing a pack ships flows disabled; this
+/// is the deliberate "yes, run this in the background", and the moment the instance
+/// that accumulates its memory comes into existence.
+#[tauri::command]
+async fn arm_schedule(
+    flow_id: String,
+    schedule_id: String,
+    instance_id: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<AgentInstance, String> {
+    let conn = require_connection(&state)?;
+    conn.arm_schedule(&flow_id, &schedule_id, instance_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Disarm. The agent and everything it has learned survive — re-arming reuses it.
+#[tauri::command]
+async fn disarm_schedule(
+    flow_id: String,
+    schedule_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<FlowBinding, String> {
+    let conn = require_connection(&state)?;
+    conn.disarm_schedule(&flow_id, &schedule_id).await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn agent_instance_memory(
     id: String,
@@ -1651,13 +1703,77 @@ fn setup_logging() {
     log::info!("Logging initialized: {}", log_path.display());
 }
 
+/// The URL scheme registered for this app, so a registry page can hand it an agent
+/// pack to review.
+const DEEP_LINK_SCHEME: &str = "metalcraft-workshop://";
+
+/// Pull the archive URL out of `metalcraft-workshop://install?url=…`.
+///
+/// Returns `None` for anything else — an unknown action, a missing parameter, or a
+/// target that is not `https`. That last one matters: the value ends up as a URL the
+/// *pod* fetches, so allowing `file://` would turn a link on a web page into a read
+/// of the pod's disk. The pod checks its own allowlist too, but a client that forwards
+/// whatever it is handed is a client doing its share of the work badly.
+fn install_url_from_deep_link(raw: &str) -> Option<String> {
+    let rest = raw.strip_prefix(DEEP_LINK_SCHEME)?;
+    let (action, query) = rest.split_once('?')?;
+    if action.trim_end_matches('/') != "install" {
+        log::warn!("deep link: ignoring unknown action '{action}'");
+        return None;
+    }
+
+    let url = query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == "url").then(|| percent_decode(v))
+    })?;
+
+    if !url.starts_with("https://") {
+        // http is allowed nowhere here on purpose: a deep link is attacker-supplied
+        // input arriving from a browser, and a plaintext archive URL is a swap
+        // waiting to happen. A local dev registry can still be installed from by
+        // pasting the URL into the dialog.
+        log::warn!("deep link: refusing a non-https archive URL");
+        return None;
+    }
+    Some(url)
+}
+
+/// Minimal `%XX` decoding, enough for a URL that was `encodeURIComponent`'d.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.replace('+', " ").into_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&String::from_utf8_lossy(&bytes[i + 1..i + 3]), 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn main() {
     setup_logging();
 
-    let cli_open = std::env::args().nth(1).map(PathBuf::from);
+    // The first argument is a directory to open, *or* a `metalcraft-workshop://` URL
+    // when the OS launched us to service a deep link. Telling them apart here keeps
+    // the cold-start path (the app was not running) using the same code as the
+    // already-running path below.
+    let first_arg = std::env::args().nth(1);
+    let cold_start_link = first_arg
+        .as_deref()
+        .filter(|a| a.starts_with(DEEP_LINK_SCHEME))
+        .map(str::to_string);
+    let cli_open = first_arg.filter(|a| !a.starts_with(DEEP_LINK_SCHEME)).map(PathBuf::from);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = Arc::new(AppState {
@@ -1668,6 +1784,37 @@ fn main() {
                 app_handle: handle.clone(),
             });
             handle.manage(state.clone());
+
+            // Deep links, both ways in: the app was already running (the plugin's
+            // event) or the OS launched it to service the link (the argument).
+            //
+            // Either way this only *emits* — it never installs. The URL lands in the
+            // same inspect-then-approve dialog a local file would, because arriving
+            // from a web page is not consent, and a link that could install silently
+            // would be a very good phishing primitive.
+            {
+                let st = state.clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if let Some(archive) = install_url_from_deep_link(url.as_str()) {
+                            st.emit(WorkshopEvent::InstallRequested { url: archive });
+                        }
+                    }
+                });
+            }
+            if let Some(archive) =
+                cold_start_link.as_deref().and_then(install_url_from_deep_link)
+            {
+                let st = state.clone();
+                // The frontend has not subscribed yet at setup time, so hold the
+                // event until it has. Without the delay a cold start swallows the
+                // very link that caused it — the worst case, because that is the
+                // first-time user.
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                    st.emit(WorkshopEvent::InstallRequested { url: archive });
+                });
+            }
 
             if let Some(path) = cli_open.clone() {
                 if path.is_dir() {
@@ -1784,7 +1931,71 @@ fn main() {
             metalcraft_logout,
             list_metalcraft_pods,
             open_metalcraft_pod,
+            flow_binding,
+            bind_flow_preset,
+            arm_schedule,
+            disarm_schedule,
         ])
         .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod deep_link_tests {
+    use super::*;
+
+    #[test]
+    fn an_install_link_yields_its_archive_url() {
+        let url = install_url_from_deep_link(
+            "metalcraft-workshop://install?url=https%3A%2F%2Faxoniac.com%2Fapi%2Fv1%2Fagent-packs%2Famy_kitchen%2Fdownload",
+        );
+        assert_eq!(
+            url.as_deref(),
+            Some("https://axoniac.com/api/v1/agent-packs/amy_kitchen/download")
+        );
+    }
+
+    #[test]
+    fn extra_parameters_do_not_confuse_it() {
+        let url = install_url_from_deep_link(
+            "metalcraft-workshop://install?version=1.4.0&url=https%3A%2F%2Fa.example%2Fx&ref=%40amy",
+        );
+        assert_eq!(url.as_deref(), Some("https://a.example/x"));
+    }
+
+    /// The value becomes a URL the *pod* fetches, so a link on a web page must not be
+    /// able to point it at the pod's own disk or at a plaintext origin.
+    #[test]
+    fn non_https_targets_are_refused() {
+        for bad in [
+            "metalcraft-workshop://install?url=file%3A%2F%2F%2Fetc%2Fpasswd",
+            "metalcraft-workshop://install?url=http%3A%2F%2Fa.example%2Fx",
+            "metalcraft-workshop://install?url=javascript%3Aalert(1)",
+        ] {
+            assert_eq!(install_url_from_deep_link(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn anything_that_is_not_an_install_link_is_ignored() {
+        for bad in [
+            "metalcraft-workshop://uninstall?url=https%3A%2F%2Fa.example%2Fx",
+            "metalcraft-workshop://install",
+            "metalcraft-workshop://install?version=1.0.0",
+            "https://axoniac.com/@amy",
+            "",
+        ] {
+            assert_eq!(install_url_from_deep_link(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn percent_decoding_handles_the_shapes_encode_uri_component_produces() {
+        assert_eq!(percent_decode("a%20b"), "a b");
+        assert_eq!(percent_decode("a+b"), "a b");
+        assert_eq!(percent_decode("%2F"), "/");
+        assert_eq!(percent_decode("plain"), "plain");
+        // A truncated escape is left alone rather than panicking on a slice.
+        assert_eq!(percent_decode("%2"), "%2");
+    }
 }

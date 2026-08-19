@@ -47,4 +47,10 @@ pub enum WorkshopEvent {
     FileChanged { path: PathBuf, kind: FileKind },
     SaveOk { kind: FileKind, id: String },
     Error { message: String },
+    /// A `metalcraft-workshop://install?url=…` deep link, from a registry page.
+    ///
+    /// Carries only the archive URL. The app then runs the *same* inspect-then-approve
+    /// flow it uses for a local file, so arriving from a web page never skips the
+    /// consent summary — nothing is installed because somebody clicked a link.
+    InstallRequested { url: String },
 }
