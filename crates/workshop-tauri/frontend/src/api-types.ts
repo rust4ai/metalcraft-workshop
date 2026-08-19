@@ -4,6 +4,166 @@
  */
 
 export interface paths {
+    "/api/v1/agent-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_agent_packs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-packs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_export_agent_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-packs/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_install_agent_pack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-packs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_pack"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_agent_pack"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_agent_presets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-presets/{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_preset"];
+        put: operations["put_agent_preset"];
+        post?: never;
+        delete: operations["delete_agent_preset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_agent_instances"];
+        put?: never;
+        post: operations["post_create_agent_instance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/instances/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_instance"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_agent_instance"];
+        options?: never;
+        head?: never;
+        patch: operations["patch_agent_instance"];
+        trace?: never;
+    };
+    "/api/v1/agents/instances/{id}/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_instance_conversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/instances/{id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_instance_memory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/api-tools": {
         parameters: {
             query?: never;
@@ -325,6 +485,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flows/{id}/binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_flow_binding"];
+        put: operations["put_flow_binding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/flows/{id}/install-dependencies": {
         parameters: {
             query?: never;
@@ -359,6 +535,70 @@ export interface paths {
         put?: never;
         post: operations["post_run_flow"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id}/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_flow_schedules"];
+        put: operations["put_flow_schedules"];
+        post: operations["post_flow_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id}/schedules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_flow_schedules_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id}/schedules/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_flow_schedule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flows/{id}/schedules/{sid}/arm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_arm_schedule"];
+        delete: operations["delete_arm_schedule"];
         options?: never;
         head?: never;
         patch?: never;
@@ -535,6 +775,14 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /**
+         * Retired. An integration pack is no longer independently enabled or disabled —
+         *     an agent pack is the install unit, and the packs it vendors are simply present
+         *     (see `docs/AGENT_PACKS_PLAN.md`).
+         * @description This answers 410 rather than quietly succeeding: a toggle that returns 204 and
+         *     changes nothing is worse than one that says it is gone, because the UI would go
+         *     on showing a state the runtime does not honour.
+         */
         put: operations["put_pack_enabled"];
         post?: never;
         delete?: never;
@@ -757,11 +1005,113 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AgentInstance: {
+            /** @description The agent pack that provided the preset, when it came from one. */
+            agent_pack?: string | null;
+            /**
+             * @description The agent preset this instance was created from. **Immutable for its life** —
+             *     its memory is seeded from that preset, so swapping it mid-life is incoherent.
+             *     Switching agents means starting a new instance.
+             */
+            agent_preset: string;
+            created_at: string;
+            /**
+             * @description Diagnostics only. Personas and skills **follow** the installed pack version
+             *     (see the plan's §5.4); this records what it was born against.
+             */
+            created_from_version?: string | null;
+            id: string;
+            last_active_at?: string;
+            name: string;
+            origin?: components["schemas"]["InstanceOrigin"];
+            /**
+             * @description Ephemeral instances recall against the preset but never accrue a durable
+             *     memory, and are reaped after a TTL. Naming one makes it persistent.
+             */
+            persistent?: boolean;
+            /**
+             * @description The instance's current persona — starts at the preset's default and moves
+             *     within its roster.
+             */
+            persona: string;
+        };
+        AgentPackManifest: {
+            author?: null | components["schemas"]["Author"];
+            category?: string | null;
+            /**
+             * @description Hash of every file in the archive **except `agent_pack.json`**, so the
+             *     manifest can carry the hash of what it describes without hashing itself.
+             */
+            content_sha256?: string | null;
+            description?: string;
+            domains?: string[];
+            /** @description The registry handle this pack is published under (`amy_kitchen`). */
+            handle?: string | null;
+            id: string;
+            license?: string | null;
+            /** Format: int32 */
+            manifest_version?: number;
+            name: string;
+            parent?: null | components["schemas"]["Parent"];
+            /**
+             * @description The agent presets this pack provides. Exactly one today — the registry
+             *     enforces it — but an array so multi-preset "crews" stay additive later.
+             */
+            presets?: string[];
+            provides?: components["schemas"]["Provides"];
+            /**
+             * @description Derived at build time and **re-derived at install**; a manifest that
+             *     disagrees with its own contents is rejected rather than trusted.
+             */
+            requires_env?: components["schemas"]["EnvRequirement"][];
+            tags?: string[];
+            version: string;
+        };
+        AgentPreset: {
+            avatar?: string | null;
+            default_persona: string;
+            description?: string;
+            integration_packs?: string[];
+            /** Format: int32 */
+            manifest_version?: number;
+            memories?: null | components["schemas"]["MemoriesRef"];
+            model?: null | components["schemas"]["ModelFloor"];
+            name: string;
+            personas?: components["schemas"]["PresetPersona"][];
+            requires_env?: string[];
+            skills?: string[];
+            slug: string;
+            tagline?: string | null;
+            version?: string | null;
+        };
         ApiToolSummary: {
             description: string;
             name: string;
             pack_id?: string | null;
             read_only?: boolean;
+        };
+        ArmScheduleRequest: {
+            /**
+             * @description Attach to an existing agent instead of minting one — e.g. run the briefer as
+             *     the same agent you chat with.
+             */
+            instance_id?: string | null;
+        };
+        ArmedSchedule: {
+            instance_id: string;
+            /** @description Absent if the instance was deleted out from under the binding. */
+            instance_name?: string | null;
+            schedule_id: string;
+        };
+        Author: {
+            display_name?: string | null;
+            handle: string;
+            /** @description The author's Metalcraft ID subject, when the registry recorded one. */
+            sub?: string | null;
+        };
+        BindFlowRequest: {
+            /** @description The preset slug. `null` clears the binding back to the default agent. */
+            preset?: string | null;
         };
         /**
          * @description A channel as surfaced to callers/UI: a named connection. `managed` marks the
@@ -792,6 +1142,7 @@ export interface components {
         ChatDetail: {
             created_at: string;
             id: string;
+            instance_id?: string | null;
             messages: components["schemas"]["ChatMessageWire"][];
             model_name: string;
             persona_slug: string;
@@ -890,12 +1241,35 @@ export interface components {
         ChatSummary: {
             created_at: string;
             id: string;
+            /**
+             * @description The agent this conversation belongs to. `None` only on records written before
+             *     instances existed, until the startup backfill reaches them.
+             *
+             *     Exposed because a client cannot group conversations by agent without it —
+             *     which is the whole shape of the chat list once agents exist, and the summary
+             *     was the one place it was missing.
+             */
+            instance_id?: string | null;
             model_name: string;
             persona_slug: string;
             turn_count: number;
         };
         ChatTurnRequest: {
             message: string;
+        };
+        /** @description What a human is shown before approving an install. */
+        ConsentSummary: {
+            /** @description Every origin this agent's tools can reach. */
+            domains: string[];
+            /**
+             * @description Tools classified as mutating. A read-only agent is a materially smaller
+             *     commitment than one that can write, and the dialog should say which it is.
+             */
+            mutating_tools: string[];
+            /** @description Every credential it wants, and what wants it. */
+            requires_env: components["schemas"]["EnvRequirement"][];
+            /** @description Tool names it gains, so "what can this thing actually do" is answerable. */
+            tools: string[];
         };
         CreateChannelRequest: {
             name: string;
@@ -904,8 +1278,25 @@ export interface components {
             url: string;
         };
         CreateChatRequest: {
+            /** @description The agent to start this conversation with. Defaults to `general-agent`. */
+            agent_preset?: string | null;
+            /**
+             * @description Continue an existing agent instead of minting a new one — how a named agent
+             *     accumulates conversations.
+             */
+            instance_id?: string | null;
             model_name?: string | null;
-            persona_slug: string;
+            /** @description Name the agent, which also makes it persistent. */
+            name?: string | null;
+            /**
+             * @description Optional now: with an `agent_preset`, the persona comes from the preset's
+             *     default. Kept for callers that still pick a persona directly.
+             */
+            persona_slug?: string | null;
+        };
+        CreateInstanceRequest: {
+            agent_preset?: string | null;
+            name?: string | null;
         };
         /** @description What a flow needs beyond itself, checked against this agent's current state. */
         DependencyReport: {
@@ -946,6 +1337,15 @@ export interface components {
             /** @description Present (and `kind == "flow"`) when produced by a flow run. */
             flow_id?: string | null;
             id: string;
+            /**
+             * @description The agent this session belongs to. Absent on sessions written before agents
+             *     existed, and on CLI runs, which have no agent.
+             *
+             *     This is what lets a Sessions list answer "which agent produced this?" — the
+             *     question that matters most for a background agent, whose failures arrive here
+             *     with nobody watching.
+             */
+            instance_id?: string | null;
             /** @description "session" for a normal run, "flow" for a flow run. */
             kind?: string | null;
             model_name?: string | null;
@@ -954,8 +1354,43 @@ export interface components {
             /** @description Count of `turn_NNN.json` files — how far the run actually got. */
             turn_count: number;
         };
+        /**
+         * @description One credential, attributed to what needs it — because the question a human is
+         *     answering at install time is "which secrets do I have to paste in", not "which
+         *     pack wants what".
+         */
+        EnvRequirement: {
+            name: string;
+            needed_by?: string[];
+            required?: boolean;
+        };
         ErrorResponse: {
             error: string;
+        };
+        ExportAgentPackRequest: {
+            /** @description Write the archive here. Omit to receive the bytes in the response. */
+            out?: string | null;
+            preset: string;
+            version?: string | null;
+        };
+        /** @description The binding for one flow, resolved for display. */
+        FlowBindingView: {
+            /** @description `schedule id -> agent instance`, for schedules that have been armed. */
+            armed: components["schemas"]["ArmedSchedule"][];
+            /** @description True when the preset was chosen deliberately rather than defaulted. */
+            bound: boolean;
+            flow_id: string;
+            /** @description Personas the flow names, and whether the preset can reach each one. */
+            personas: components["schemas"]["FlowPersonaCheck"][];
+            /**
+             * @description The preset the flow runs as. Always populated — an unbound flow resolves to
+             *     the default agent, which is what it effectively already was.
+             */
+            preset: string;
+        };
+        FlowPersonaCheck: {
+            allowed: boolean;
+            slug: string;
         };
         /** @description Result of running one prompt node of a flow. */
         FlowPromptResult: {
@@ -984,6 +1419,12 @@ export interface components {
             flow_id: string;
             /** @description Unique run id (the `runs/{id}.json` filename). */
             id: string;
+            /**
+             * @description The agent instance this run belongs to, when a schedule armed one. Pod-local
+             *     and never published — see [`crate::flow_bindings`]. Absent on ad-hoc runs and
+             *     on records written before agent instances existed, which resume as before.
+             */
+            instance_id?: string | null;
             /** @description Model name to resume with. */
             model: string;
             pause?: null | components["schemas"]["PauseInfo"];
@@ -1171,10 +1612,41 @@ export interface components {
             /** @description Optional specific version to install (defaults to the registry's latest). */
             version?: string | null;
         };
+        /**
+         * @description What an install actually did. Every field here is something a human or a UI has
+         *     a reason to see — silence about a skipped dependency is how you get an agent that
+         *     half works.
+         */
+        InstallReport: {
+            consent: components["schemas"]["ConsentSummary"];
+            id: string;
+            memories_indexed: number;
+            /**
+             * @description Credentials the pod does not have yet. A **warning**, never a failure: the
+             *     pack installs, its tools error clearly at call time, and `key_set` fixes it.
+             */
+            missing_env: string[];
+            /** @description Packs already present under the same hash — free, because content-addressed. */
+            packs_deduplicated: string[];
+            /** @description Packs newly written to the content store. */
+            packs_stored: string[];
+            personas: string[];
+            /** @description Preset slugs already provided by another installed pack. */
+            preset_collisions: string[];
+            presets: string[];
+            skills: string[];
+            version: string;
+        };
         /** @description The result of a successful install: what landed + what it still needs. */
         InstallResult: {
             dependencies: components["schemas"]["DependencyReport"];
             flow: components["schemas"]["InstalledFlow"];
+        };
+        /** @description An installed agent pack. */
+        InstalledAgentPack: {
+            id: string;
+            manifest: components["schemas"]["AgentPackManifest"];
+            root: string;
         };
         /** @description Summary of the flow that was written. */
         InstalledFlow: {
@@ -1183,6 +1655,59 @@ export interface components {
             id: string;
             name: string;
             node_count: number;
+        };
+        InstanceDetail: components["schemas"]["AgentInstance"] & {
+            conversations: components["schemas"]["ChatSummary"][];
+            /**
+             * @description What this agent is scheduled to do — the flow schedules armed to it. A pod
+             *     could not previously answer that question about a background agent.
+             */
+            scheduled: components["schemas"]["ScheduledFlowRef"][];
+        };
+        InstanceList: {
+            instances: components["schemas"]["InstanceListItem"][];
+        };
+        /**
+         * @description An agent in a list, with the one derived number a list actually needs.
+         *
+         *     Typed rather than patched into a `serde_json::Value` so it reaches the spec —
+         *     `conversation_count` was invisible to both generated clients, which is how a
+         *     field that exists on the wire can still be unusable.
+         */
+        InstanceListItem: components["schemas"]["AgentInstance"] & {
+            conversation_count: number;
+        };
+        /** @description What one agent knows, split by where it came from. */
+        InstanceMemoryView: {
+            /** @description `<preset>@<version>` when this agent was shipped a knowledge base. */
+            base?: string | null;
+            /** @description Shipped memories this agent has been told to forget. */
+            forgotten: number;
+            instance_id: string;
+            /** @description Memories this agent formed itself. */
+            learned: number;
+            sample: components["schemas"]["MemorySample"][];
+            /** @description Memories the pack gave it, still visible (tombstones excluded). */
+            shipped: number;
+        };
+        /**
+         * @description Where an instance came from. Drives the default lifetime: a workshop chat is
+         *     disposable, a channel-bound agent is not.
+         */
+        InstanceOrigin: {
+            /** @enum {string} */
+            kind: "workshop";
+        } | {
+            /** @enum {string} */
+            kind: "cli";
+        } | {
+            channel: string;
+            /** @enum {string} */
+            kind: "gateway";
+        } | {
+            flow_id: string;
+            /** @enum {string} */
+            kind: "flow";
         };
         IntegrationPackDetail: {
             api_tools: string[];
@@ -1251,6 +1776,11 @@ export interface components {
         };
         /** @description The lockfile document. */
         Lock: {
+            /**
+             * @description Agent packs — the unit of installation. Self-contained, so restoring these
+             *     needs no dependency ordering: each carries its own integration packs.
+             */
+            agent_packs?: components["schemas"]["LockEntry"][];
             flows?: components["schemas"]["LockEntry"][];
             packs?: components["schemas"]["LockEntry"][];
             /**
@@ -1270,6 +1800,26 @@ export interface components {
             /** @description The concrete version installed. */
             version: string;
         };
+        /** @description Reference to the seed memories an agent pack ships with a preset. */
+        MemoriesRef: {
+            /** Format: int32 */
+            count?: number;
+            /** Format: int32 */
+            dims?: number | null;
+            embed_model?: string | null;
+            file: string;
+        };
+        MemorySample: {
+            entity?: string | null;
+            id: string;
+            /** Format: float */
+            importance: number;
+            kind: string;
+            /** @description `"shipped"` or `"learned"` — the distinction the UI actually needs. */
+            origin: string;
+            tags: string[];
+            text: string;
+        };
         MgConnectRequest: {
             /**
              * @description Audience-scoped connection token from the k3 broker, adopted as the
@@ -1283,6 +1833,20 @@ export interface components {
             phone_number: string;
         };
         /**
+         * @description A **capability floor**, not a model name.
+         *
+         *     A hard `"gpt-5.4"` breaks on a pod that doesn't have it. Declare what the agent
+         *     needs and let the pod map that onto what it has; `prefer` is a hint, never a
+         *     requirement.
+         */
+        ModelFloor: {
+            /** Format: int32 */
+            min_context?: number | null;
+            needs?: string[];
+            prefer?: string | null;
+            tier?: string | null;
+        };
+        /**
          * @description Config for a `multipart/form-data` upload tool. The argument named by
          *     `file_param` is treated as a local file path (constrained to the upload
          *     root) and sent as the file part `file_field`; all other arguments become
@@ -1294,6 +1858,11 @@ export interface components {
             /** @description Incoming argument that holds the local file path to upload. */
             file_param: string;
         };
+        NewConversationRequest: {
+            model_name?: string | null;
+            /** @description Start this conversation as a specific persona from the agent's roster. */
+            persona_slug?: string | null;
+        };
         /** @description Outcome of trying to satisfy one pack requirement of a flow. */
         PackInstallOutcome: {
             /** @description Human-readable detail (why it was skipped/failed, or the resolved version). */
@@ -1304,6 +1873,26 @@ export interface components {
             status: string;
             /** @description The version installed (or already present), when known. */
             version?: string | null;
+        };
+        /** @description A vendored integration pack, pinned by content. */
+        PackRef: {
+            /** @description Integrity pin for the vendored copy. Verified at install. */
+            content_sha256?: string | null;
+            id: string;
+            /** @description Where the author obtained it, for provenance display. Never fetched from. */
+            source?: string | null;
+            version: string;
+        };
+        Parent: {
+            content_sha256?: string | null;
+            id: string;
+            version: string;
+        };
+        PatchInstanceRequest: {
+            name?: string | null;
+            persistent?: boolean | null;
+            /** @description Move within the preset's roster. Rejected if the persona isn't in it. */
+            persona?: string | null;
         };
         /** @description Why a run is paused and what will resume it. */
         PauseInfo: {
@@ -1342,6 +1931,11 @@ export interface components {
              */
             version?: string | null;
         };
+        /**
+         * @description What a persona is allowed to do inside a preset.
+         * @enum {string}
+         */
+        PersonaRole: "default" | "subagent" | "internal";
         PersonaSummary: {
             description: string;
             name: string;
@@ -1354,7 +1948,35 @@ export interface components {
             read_only?: boolean;
             slug: string;
         };
+        /**
+         * @description A preset with its roster resolved against what this pod actually has.
+         *
+         *     Typed rather than assembled ad hoc so it reaches `openapi.json`: both Workshop
+         *     frontends generate their client types from the spec, and a response described only
+         *     by a prose `description` gives them nothing to generate.
+         */
+        PresetDetail: {
+            personas: components["schemas"]["RosterPersona"][];
+            preset: components["schemas"]["AgentPreset"];
+        };
+        PresetPersona: {
+            description?: string | null;
+            role?: components["schemas"]["PersonaRole"];
+            slug: string;
+        };
+        PresetSummary: {
+            default_persona: string;
+            description: string;
+            name: string;
+            pack_id?: string | null;
+            persona_count: number;
+            read_only?: boolean;
+            slug: string;
+            tagline?: string | null;
+        };
         ProjectLayout: {
+            agent_instances_dir: string;
+            agent_presets_dir: string;
             api_tools_dir: string;
             data_dir: string;
             flows_dir: string;
@@ -1363,7 +1985,18 @@ export interface components {
             skills_dir: string;
         };
         ProjectSnapshot: {
+            /**
+             * @description Agents that actually exist. Ephemeral ones are excluded — an unfiltered list
+             *     is one row per chat ever started, which is noise, not information.
+             */
+            agent_instances: components["schemas"]["AgentInstance"][];
+            /**
+             * @description Agents this pod can be. Both Workshop clients paint their agent picker from
+             *     the snapshot, so leaving these out costs an extra round-trip on every load.
+             */
+            agent_presets: components["schemas"]["PresetSummary"][];
             api_tools: components["schemas"]["ApiToolSummary"][];
+            default_agent_preset: string;
             /**
              * @description From the external `metalcraft-flows` crate, which has no `ToSchema`; the
              *     web app doesn't consume this field, so expose it as an opaque object array.
@@ -1374,6 +2007,11 @@ export interface components {
             personas: components["schemas"]["PersonaSummary"][];
             sessions: components["schemas"]["DiagnosticsSessionSummary"][];
             skills: components["schemas"]["SkillSummary"][];
+        };
+        Provides: {
+            integration_packs?: components["schemas"]["PackRef"][];
+            personas?: string[];
+            skills?: string[];
         };
         /**
          * @description A key recommended by one or more *enabled* integration packs (from their
@@ -1411,6 +2049,23 @@ export interface components {
             handle: string;
         };
         /**
+         * @description One entry in a preset's roster.
+         *
+         *     `installed: false` is the interesting case: the preset names a persona this pod
+         *     does not have. A UI should render it disabled with its `error` rather than
+         *     silently omit it — omission looks like the preset is smaller than it is.
+         */
+        RosterPersona: {
+            description?: string;
+            /** @description Why it could not be resolved. Present only when `installed` is false. */
+            error?: string | null;
+            installed: boolean;
+            name?: string;
+            skills?: string[];
+            slug: string;
+            tools?: string[];
+        };
+        /**
          * @description The run endpoint returns one of two shapes depending on the flow's spec
          *     version: v2 (state-machine) flows return a [`FlowRunSummary`]; v1 (linear)
          *     flows return a [`RunFlowResponse`]. Documented as a `oneOf` so generated
@@ -1437,6 +2092,28 @@ export interface components {
             flow_id: string;
             prompts: components["schemas"]["FlowPromptResult"][];
         };
+        /** @description One upcoming-fire preview for a schedule. */
+        SchedulePreview: {
+            /** @description Human-readable description of the cadence. */
+            description: string;
+            /** @description Up to a few upcoming fire times, RFC-3339. Empty for `manual`. */
+            next_runs: string[];
+            /** @description The schedule's id. */
+            schedule_id: string;
+        };
+        ScheduledFlowRef: {
+            flow_id: string;
+            /**
+             * @description Absent when the flow file is gone but the binding is not — worth surfacing
+             *     rather than hiding, since it means a stale binding.
+             */
+            flow_name?: string | null;
+            schedule_ids: string[];
+        };
+        /**
+         * @description Kept only so the retired endpoint below still documents the body clients used
+         *     to send; the value is ignored.
+         */
         SetEnabledRequest: {
             enabled: boolean;
         };
@@ -1471,6 +2148,15 @@ export interface components {
             /** @description Surviving personas that still declare the removed pack in their `packs` list. */
             dependent_personas: string[];
         };
+        UninstallReport: {
+            id: string;
+            /**
+             * @description Agents left pointing at a preset that no longer exists. Never silently
+             *     deleted — someone's memories are in there.
+             */
+            orphaned_agents: string[];
+            packs_freed: number;
+        };
         UpdateChannelRequest: {
             enabled?: boolean;
             name: string;
@@ -1487,6 +2173,425 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agent_packs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installed agent packs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_export_agent_pack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportAgentPackRequest"];
+            };
+        };
+        responses: {
+            /** @description The .agentpack bytes, or a report if `out` was given */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_install_agent_pack: {
+        parameters: {
+            query?: {
+                /** @description Local .agentpack path; omit to upload the archive as the body */
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The .agentpack archive */
+        requestBody: {
+            content: {
+                "application/octet-stream": number[];
+            };
+        };
+        responses: {
+            /** @description Install report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_agent_pack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Agent pack id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pack's manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not installed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_agent_pack: {
+        parameters: {
+            query?: {
+                /** @description Orphan any saved agents that use it */
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Agent pack id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Uninstall report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description In use */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_agent_presets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Installed agent presets */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_agent_preset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Preset slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The preset, with its roster resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresetDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_agent_preset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Preset slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPreset"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Owned by a pack */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_agent_preset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Preset slug */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not user-owned */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_agent_instances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live agents on this pod */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceList"];
+                };
+            };
+        };
+    };
+    post_create_agent_instance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInstanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_agent_instance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstanceDetail"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_agent_instance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_agent_instance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchInstanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_instance_conversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewConversationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummary"];
+                };
+            };
+        };
+    };
+    get_agent_instance_memory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Instance id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What this agent knows, shipped vs learned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_api_tools: {
         parameters: {
             query?: never;
@@ -2153,6 +3258,79 @@ export interface operations {
             };
         };
     };
+    get_flow_binding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowBindingView"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_flow_binding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindFlowRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowBindingView"];
+                };
+            };
+            /** @description Flow names personas outside the roster */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     post_install_flow_dependencies: {
         parameters: {
             query?: never;
@@ -2208,6 +3386,264 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RunFlowOutput"];
                 };
+            };
+        };
+    };
+    get_flow_schedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Effective schedules (array of FlowScheduleSpec) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_flow_schedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Saved schedules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_flow_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Schedule added; returns the full list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A schedule with that id already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_flow_schedules_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upcoming fire times per schedule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulePreview"][];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_flow_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+                /** @description Schedule id */
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed; returns the remaining list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_arm_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+                /** @description Schedule id */
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArmScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description The agent this schedule now runs as */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentInstance"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_arm_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Flow id */
+                id: string;
+                /** @description Schedule id */
+                sid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disarmed; the agent and its memory are kept */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -2472,12 +3908,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated */
-            200: {
+            /** @description Retired — uninstall the agent pack instead */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };

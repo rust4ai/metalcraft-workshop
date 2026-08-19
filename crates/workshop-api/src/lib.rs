@@ -7,6 +7,7 @@
 //! via `#[tauri::command]` handlers and (for local mode) forwards file-watcher
 //! events.
 
+pub mod agents;
 pub mod api_tools;
 pub mod chat;
 pub mod commands;
@@ -22,6 +23,10 @@ pub mod project;
 pub mod skills;
 pub mod watcher;
 
+pub use agents::{
+    AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
+    InstanceMemory, InstancePatch, RosterPersona,
+};
 pub use api_tools::{ApiToolConfig, ApiToolSummary};
 pub use chat::{ChatDetail, ChatEvent, ChatSummary, ChatWireMessage, RunFlowResult};
 pub use commands::{FileKind, FrontendCommand, WorkshopEvent};

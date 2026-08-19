@@ -16,6 +16,41 @@ export type ConnectionMode = "local" | "remote";
 
 export type PersonaSummary = S["PersonaSummary"];
 
+// ---- Agents ----------------------------------------------------------------
+//
+// A *preset* is what this pod can be; an *agent* (the pod calls it an instance) is
+// one that actually exists, with its own memory and conversations. Say "agent" in
+// the UI — "Amy — Sunday prep" is an agent, and the fact that it instantiates a
+// preset is our vocabulary, not the user's.
+
+export type AgentPresetSummary = S["PresetSummary"];
+export type AgentPreset = S["AgentPreset"];
+/// The list response carries a conversation count the stored record does not, so the
+/// list item is the type a UI actually holds.
+export type AgentInstance = S["InstanceListItem"];
+export type InstanceOrigin = S["InstanceOrigin"];
+export type InstanceMemory = S["InstanceMemoryView"];
+export type MemorySample = S["MemorySample"];
+export type RosterPersona = S["RosterPersona"];
+export type AgentPresetDetail = S["PresetDetail"];
+export type ScheduledFlowRef = S["ScheduledFlowRef"];
+
+/// The Tauri layer reshapes this one: the pod flattens the instance into the
+/// response, while the command returns it nested so the two data sources (pod and
+/// local directory) can share a type.
+export interface InstanceDetail {
+  instance: AgentInstance;
+  conversations: ChatSummary[];
+  scheduled: ScheduledFlowRef[];
+}
+
+export interface InstancePatch {
+  name?: string;
+  persistent?: boolean;
+  /// Must be inside the preset's roster; the pod rejects anything else.
+  persona?: string;
+}
+
 export type Persona = S["Persona"];
 
 export type SkillSummary = S["SkillSummary"];
@@ -104,6 +139,8 @@ export interface DiagnosticsSessionSummary {
   kind: string | null;
   /** Present (and kind === "flow") when this session came from a flow run. */
   flow_id: string | null;
+  /** The agent this session ran as. Absent on CLI runs and pre-agent sessions. */
+  instance_id?: string | null;
   turn_count: number;
 }
 
@@ -119,6 +156,9 @@ export interface SessionInfo {
   auto_approve: boolean;
   kind: string | null;
   flow_id: string | null;
+  /// The agent this session ran as. Absent on CLI runs and on sessions written
+  /// before agents existed.
+  instance_id?: string | null;
 }
 
 export type TimelineEvent =
@@ -145,6 +185,8 @@ export interface ProjectLayout {
   has_flows: boolean;
   has_session_logs: boolean;
   has_api_tools: boolean;
+  has_agent_presets: boolean;
+  has_agent_instances: boolean;
 }
 
 export type ApiToolSummary = S["ApiToolSummary"];
@@ -216,6 +258,13 @@ export interface ProjectSnapshot {
   sessions: DiagnosticsSessionSummary[];
   api_tools: ApiToolSummary[];
   keys: KeySummary[];
+  /// What this pod can be. Empty against an agent old enough to predate presets,
+  /// which is the signal to fall back to the persona picker.
+  agent_presets: AgentPresetSummary[];
+  /// Agents that exist. Persistent ones only from a pod — every chat mints an
+  /// ephemeral instance, so an unfiltered list is one row per chat and pure noise.
+  agent_instances: AgentInstance[];
+  default_agent_preset: string | null;
   layout: ProjectLayout;
 }
 

@@ -7,9 +7,463 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.28.1"
+    "version": "0.29.0"
   },
   "paths": {
+    "/api/v1/agent-packs": {
+      "get": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "list_agent_packs",
+        "responses": {
+          "200": {
+            "description": "Installed agent packs"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-packs/export": {
+      "post": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "post_export_agent_pack",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportAgentPackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The .agentpack bytes, or a report if `out` was given"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-packs/install": {
+      "post": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "post_install_agent_pack",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Local .agentpack path; omit to upload the archive as the body",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The .agentpack archive",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Install report"
+          },
+          "400": {
+            "description": "Rejected"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-packs/{id}": {
+      "get": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "get_agent_pack",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent pack id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pack's manifest"
+          },
+          "404": {
+            "description": "Not installed"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent-packs"
+        ],
+        "operationId": "delete_agent_pack",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Agent pack id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "Orphan any saved agents that use it",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Uninstall report"
+          },
+          "409": {
+            "description": "In use"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-presets": {
+      "get": {
+        "tags": [
+          "agent-presets"
+        ],
+        "operationId": "list_agent_presets",
+        "responses": {
+          "200": {
+            "description": "Installed agent presets"
+          }
+        }
+      }
+    },
+    "/api/v1/agent-presets/{slug}": {
+      "get": {
+        "tags": [
+          "agent-presets"
+        ],
+        "operationId": "get_agent_preset",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Preset slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The preset, with its roster resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresetDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "agent-presets"
+        ],
+        "operationId": "put_agent_preset",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Preset slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPreset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "409": {
+            "description": "Owned by a pack"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent-presets"
+        ],
+        "operationId": "delete_agent_preset",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Preset slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not user-owned"
+          }
+        }
+      }
+    },
+    "/api/v1/agents/instances": {
+      "get": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "list_agent_instances",
+        "responses": {
+          "200": {
+            "description": "Live agents on this pod",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "post_create_agent_instance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInstanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/api/v1/agents/instances/{id}": {
+      "get": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "get_agent_instance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Instance id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "delete_agent_instance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Instance id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "patch_agent_instance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Instance id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchInstanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/agents/instances/{id}/conversations": {
+      "post": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "post_instance_conversation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Instance id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/instances/{id}/memory": {
+      "get": {
+        "tags": [
+          "agent-instances"
+        ],
+        "operationId": "get_agent_instance_memory",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Instance id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What this agent knows, shipped vs learned"
+          }
+        }
+      }
+    },
     "/api/v1/api-tools": {
       "get": {
         "tags": [
@@ -881,6 +1335,106 @@
         }
       }
     },
+    "/api/v1/flows/{id}/binding": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "get_flow_binding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowBindingView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "put_flow_binding",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindFlowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowBindingView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Flow names personas outside the roster",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/flows/{id}/install-dependencies": {
       "post": {
         "tags": [
@@ -960,6 +1514,370 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}/schedules": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "get_flow_schedules",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective schedules (array of FlowScheduleSpec)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "put_flow_schedules",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved schedules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "post_flow_schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Schedule added; returns the full list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A schedule with that id already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}/schedules/preview": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "get_flow_schedules_preview",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upcoming fire times per schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchedulePreview"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}/schedules/{sid}": {
+      "delete": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "delete_flow_schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "description": "Schedule id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed; returns the remaining list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/flows/{id}/schedules/{sid}/arm": {
+      "post": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "post_arm_schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "description": "Schedule id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The agent this schedule now runs as",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentInstance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "flows"
+        ],
+        "operationId": "delete_arm_schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Flow id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "description": "Schedule id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disarmed; the agent and its memory are kept"
           }
         }
       }
@@ -1254,6 +2172,8 @@
         "tags": [
           "integration-packs"
         ],
+        "summary": "Retired. An integration pack is no longer independently enabled or disabled —\nan agent pack is the install unit, and the packs it vendors are simply present\n(see `docs/AGENT_PACKS_PLAN.md`).",
+        "description": "This answers 410 rather than quietly succeeding: a toggle that returns 204 and\nchanges nothing is worse than one that says it is gone, because the UI would go\non showing a state the runtime does not honour.",
         "operationId": "put_pack_enabled",
         "parameters": [
           {
@@ -1277,8 +2197,15 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Updated"
+          "410": {
+            "description": "Retired — uninstall the agent pack instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1749,6 +2676,251 @@
   },
   "components": {
     "schemas": {
+      "AgentInstance": {
+        "type": "object",
+        "required": [
+          "id",
+          "agent_preset",
+          "name",
+          "persona",
+          "created_at"
+        ],
+        "properties": {
+          "agent_pack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent pack that provided the preset, when it came from one."
+          },
+          "agent_preset": {
+            "type": "string",
+            "description": "The agent preset this instance was created from. **Immutable for its life** —\nits memory is seeded from that preset, so swapping it mid-life is incoherent.\nSwitching agents means starting a new instance."
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_from_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Diagnostics only. Personas and skills **follow** the installed pack version\n(see the plan's §5.4); this records what it was born against."
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_active_at": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/InstanceOrigin"
+          },
+          "persistent": {
+            "type": "boolean",
+            "description": "Ephemeral instances recall against the preset but never accrue a durable\nmemory, and are reaped after a TTL. Naming one makes it persistent."
+          },
+          "persona": {
+            "type": "string",
+            "description": "The instance's current persona — starts at the preset's default and moves\nwithin its roster."
+          }
+        }
+      },
+      "AgentPackManifest": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version"
+        ],
+        "properties": {
+          "author": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Author"
+              }
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Hash of every file in the archive **except `agent_pack.json`**, so the\nmanifest can carry the hash of what it describes without hashing itself."
+          },
+          "description": {
+            "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The registry handle this pack is published under (`amy_kitchen`)."
+          },
+          "id": {
+            "type": "string"
+          },
+          "license": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "manifest_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Parent",
+                "description": "Fork lineage."
+              }
+            ]
+          },
+          "presets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The agent presets this pack provides. Exactly one today — the registry\nenforces it — but an array so multi-preset \"crews\" stay additive later."
+          },
+          "provides": {
+            "$ref": "#/components/schemas/Provides"
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvRequirement"
+            },
+            "description": "Derived at build time and **re-derived at install**; a manifest that\ndisagrees with its own contents is rejected rather than trusted."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentPreset": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "default_persona"
+        ],
+        "properties": {
+          "avatar": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "default_persona": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "integration_packs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "manifest_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "memories": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MemoriesRef"
+              }
+            ]
+          },
+          "model": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelFloor"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PresetPersona"
+            }
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slug": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ApiToolSummary": {
         "type": "object",
         "required": [
@@ -1770,6 +2942,76 @@
           },
           "read_only": {
             "type": "boolean"
+          }
+        }
+      },
+      "ArmScheduleRequest": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Attach to an existing agent instead of minting one — e.g. run the briefer as\nthe same agent you chat with."
+          }
+        }
+      },
+      "ArmedSchedule": {
+        "type": "object",
+        "required": [
+          "schedule_id",
+          "instance_id"
+        ],
+        "properties": {
+          "instance_id": {
+            "type": "string"
+          },
+          "instance_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent if the instance was deleted out from under the binding."
+          },
+          "schedule_id": {
+            "type": "string"
+          }
+        }
+      },
+      "Author": {
+        "type": "object",
+        "required": [
+          "handle"
+        ],
+        "properties": {
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "handle": {
+            "type": "string"
+          },
+          "sub": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The author's Metalcraft ID subject, when the registry recorded one."
+          }
+        }
+      },
+      "BindFlowRequest": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The preset slug. `null` clears the binding back to the default agent."
           }
         }
       },
@@ -1847,6 +3089,12 @@
           },
           "id": {
             "type": "string"
+          },
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "messages": {
             "type": "array",
@@ -2212,6 +3460,13 @@
           "id": {
             "type": "string"
           },
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent this conversation belongs to. `None` only on records written before\ninstances existed, until the startup backfill reaches them.\n\nExposed because a client cannot group conversations by agent without it —\nwhich is the whole shape of the chat list once agents exist, and the summary\nwas the one place it was missing."
+          },
           "model_name": {
             "type": "string"
           },
@@ -2232,6 +3487,46 @@
         "properties": {
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "ConsentSummary": {
+        "type": "object",
+        "description": "What a human is shown before approving an install.",
+        "required": [
+          "domains",
+          "requires_env",
+          "tools",
+          "mutating_tools"
+        ],
+        "properties": {
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every origin this agent's tools can reach."
+          },
+          "mutating_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tools classified as mutating. A read-only agent is a materially smaller\ncommitment than one that can write, and the dialog should say which it is."
+          },
+          "requires_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvRequirement"
+            },
+            "description": "Every credential it wants, and what wants it."
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tool names it gains, so \"what can this thing actually do\" is answerable."
           }
         }
       },
@@ -2262,18 +3557,57 @@
       },
       "CreateChatRequest": {
         "type": "object",
-        "required": [
-          "persona_slug"
-        ],
         "properties": {
+          "agent_preset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent to start this conversation with. Defaults to `general-agent`."
+          },
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Continue an existing agent instead of minting a new one — how a named agent\naccumulates conversations."
+          },
           "model_name": {
             "type": [
               "string",
               "null"
             ]
           },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Name the agent, which also makes it persistent."
+          },
           "persona_slug": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional now: with an `agent_preset`, the persona comes from the preset's\ndefault. Kept for callers that still pick a persona directly."
+          }
+        }
+      },
+      "CreateInstanceRequest": {
+        "type": "object",
+        "properties": {
+          "agent_preset": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -2380,6 +3714,13 @@
           "id": {
             "type": "string"
           },
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent this session belongs to. Absent on sessions written before agents\nexisted, and on CLI runs, which have no agent.\n\nThis is what lets a Sessions list answer \"which agent produced this?\" — the\nquestion that matters most for a background agent, whose failures arrive here\nwith nobody watching."
+          },
           "kind": {
             "type": [
               "string",
@@ -2409,6 +3750,27 @@
           }
         }
       },
+      "EnvRequirement": {
+        "type": "object",
+        "description": "One credential, attributed to what needs it — because the question a human is\nanswering at install time is \"which secrets do I have to paste in\", not \"which\npack wants what\".",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "needed_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      },
       "ErrorResponse": {
         "type": "object",
         "required": [
@@ -2416,6 +3778,83 @@
         ],
         "properties": {
           "error": {
+            "type": "string"
+          }
+        }
+      },
+      "ExportAgentPackRequest": {
+        "type": "object",
+        "required": [
+          "preset"
+        ],
+        "properties": {
+          "out": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Write the archive here. Omit to receive the bytes in the response."
+          },
+          "preset": {
+            "type": "string"
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "FlowBindingView": {
+        "type": "object",
+        "description": "The binding for one flow, resolved for display.",
+        "required": [
+          "flow_id",
+          "preset",
+          "bound",
+          "personas",
+          "armed"
+        ],
+        "properties": {
+          "armed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArmedSchedule"
+            },
+            "description": "`schedule id -> agent instance`, for schedules that have been armed."
+          },
+          "bound": {
+            "type": "boolean",
+            "description": "True when the preset was chosen deliberately rather than defaulted."
+          },
+          "flow_id": {
+            "type": "string"
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowPersonaCheck"
+            },
+            "description": "Personas the flow names, and whether the preset can reach each one."
+          },
+          "preset": {
+            "type": "string",
+            "description": "The preset the flow runs as. Always populated — an unbound flow resolves to\nthe default agent, which is what it effectively already was."
+          }
+        }
+      },
+      "FlowPersonaCheck": {
+        "type": "object",
+        "required": [
+          "slug",
+          "allowed"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "slug": {
             "type": "string"
           }
         }
@@ -2493,6 +3932,13 @@
           "id": {
             "type": "string",
             "description": "Unique run id (the `runs/{id}.json` filename)."
+          },
+          "instance_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent instance this run belongs to, when a schedule armed one. Pod-local\nand never published — see [`crate::flow_bindings`]. Absent on ad-hoc runs and\non records written before agent instances existed, which resume as before."
           },
           "model": {
             "type": "string",
@@ -2937,6 +4383,84 @@
           }
         }
       },
+      "InstallReport": {
+        "type": "object",
+        "description": "What an install actually did. Every field here is something a human or a UI has\na reason to see — silence about a skipped dependency is how you get an agent that\nhalf works.",
+        "required": [
+          "id",
+          "version",
+          "presets",
+          "personas",
+          "skills",
+          "packs_stored",
+          "packs_deduplicated",
+          "missing_env",
+          "preset_collisions",
+          "memories_indexed",
+          "consent"
+        ],
+        "properties": {
+          "consent": {
+            "$ref": "#/components/schemas/ConsentSummary"
+          },
+          "id": {
+            "type": "string"
+          },
+          "memories_indexed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missing_env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Credentials the pod does not have yet. A **warning**, never a failure: the\npack installs, its tools error clearly at call time, and `key_set` fixes it."
+          },
+          "packs_deduplicated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Packs already present under the same hash — free, because content-addressed."
+          },
+          "packs_stored": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Packs newly written to the content store."
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "preset_collisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preset slugs already provided by another installed pack."
+          },
+          "presets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "InstallResult": {
         "type": "object",
         "description": "The result of a successful install: what landed + what it still needs.",
@@ -2950,6 +4474,26 @@
           },
           "flow": {
             "$ref": "#/components/schemas/InstalledFlow"
+          }
+        }
+      },
+      "InstalledAgentPack": {
+        "type": "object",
+        "description": "An installed agent pack.",
+        "required": [
+          "id",
+          "manifest",
+          "root"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/AgentPackManifest"
+          },
+          "root": {
+            "type": "string"
           }
         }
       },
@@ -2978,6 +4522,182 @@
             "minimum": 0
           }
         }
+      },
+      "InstanceDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentInstance"
+          },
+          {
+            "type": "object",
+            "required": [
+              "conversations",
+              "scheduled"
+            ],
+            "properties": {
+              "conversations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChatSummary"
+                }
+              },
+              "scheduled": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ScheduledFlowRef"
+                },
+                "description": "What this agent is scheduled to do — the flow schedules armed to it. A pod\ncould not previously answer that question about a background agent."
+              }
+            }
+          }
+        ]
+      },
+      "InstanceList": {
+        "type": "object",
+        "required": [
+          "instances"
+        ],
+        "properties": {
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstanceListItem"
+            }
+          }
+        }
+      },
+      "InstanceListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentInstance"
+          },
+          {
+            "type": "object",
+            "required": [
+              "conversation_count"
+            ],
+            "properties": {
+              "conversation_count": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "An agent in a list, with the one derived number a list actually needs.\n\nTyped rather than patched into a `serde_json::Value` so it reaches the spec —\n`conversation_count` was invisible to both generated clients, which is how a\nfield that exists on the wire can still be unusable."
+      },
+      "InstanceMemoryView": {
+        "type": "object",
+        "description": "What one agent knows, split by where it came from.",
+        "required": [
+          "instance_id",
+          "shipped",
+          "learned",
+          "forgotten",
+          "sample"
+        ],
+        "properties": {
+          "base": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`<preset>@<version>` when this agent was shipped a knowledge base."
+          },
+          "forgotten": {
+            "type": "integer",
+            "description": "Shipped memories this agent has been told to forget.",
+            "minimum": 0
+          },
+          "instance_id": {
+            "type": "string"
+          },
+          "learned": {
+            "type": "integer",
+            "description": "Memories this agent formed itself.",
+            "minimum": 0
+          },
+          "sample": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemorySample"
+            }
+          },
+          "shipped": {
+            "type": "integer",
+            "description": "Memories the pack gave it, still visible (tombstones excluded).",
+            "minimum": 0
+          }
+        }
+      },
+      "InstanceOrigin": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "workshop"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cli"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "properties": {
+              "channel": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "gateway"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "flow_id",
+              "kind"
+            ],
+            "properties": {
+              "flow_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "flow"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Where an instance came from. Drives the default lifetime: a workshop chat is\ndisposable, a channel-bound agent is not."
       },
       "IntegrationPackDetail": {
         "type": "object",
@@ -3193,6 +4913,13 @@
         "type": "object",
         "description": "The lockfile document.",
         "properties": {
+          "agent_packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LockEntry"
+            },
+            "description": "Agent packs — the unit of installation. Self-contained, so restoring these\nneeds no dependency ordering: each carries its own integration packs."
+          },
           "flows": {
             "type": "array",
             "items": {
@@ -3241,6 +4968,79 @@
           }
         }
       },
+      "MemoriesRef": {
+        "type": "object",
+        "description": "Reference to the seed memories an agent pack ships with a preset.",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "dims": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "embed_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "type": "string"
+          }
+        }
+      },
+      "MemorySample": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "text",
+          "importance",
+          "origin",
+          "tags"
+        ],
+        "properties": {
+          "entity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "importance": {
+            "type": "number",
+            "format": "float"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string",
+            "description": "`\"shipped\"` or `\"learned\"` — the distinction the UI actually needs."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "MgConnectRequest": {
         "type": "object",
         "properties": {
@@ -3271,6 +5071,38 @@
           }
         }
       },
+      "ModelFloor": {
+        "type": "object",
+        "description": "A **capability floor**, not a model name.\n\nA hard `\"gpt-5.4\"` breaks on a pod that doesn't have it. Declare what the agent\nneeds and let the pod map that onto what it has; `prefer` is a hint, never a\nrequirement.",
+        "properties": {
+          "min_context": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prefer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "MultipartConfig": {
         "type": "object",
         "description": "Config for a `multipart/form-data` upload tool. The argument named by\n`file_param` is treated as a local file path (constrained to the upload\nroot) and sent as the file part `file_field`; all other arguments become\ntext fields.",
@@ -3286,6 +5118,24 @@
           "file_param": {
             "type": "string",
             "description": "Incoming argument that holds the local file path to upload."
+          }
+        }
+      },
+      "NewConversationRequest": {
+        "type": "object",
+        "properties": {
+          "model_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona_slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Start this conversation as a specific persona from the agent's roster."
           }
         }
       },
@@ -3318,6 +5168,81 @@
               "null"
             ],
             "description": "The version installed (or already present), when known."
+          }
+        }
+      },
+      "PackRef": {
+        "type": "object",
+        "description": "A vendored integration pack, pinned by content.",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "content_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Integrity pin for the vendored copy. Verified at install."
+          },
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the author obtained it, for provenance display. Never fetched from."
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "Parent": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "content_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "PatchInstanceRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persistent": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "persona": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Move within the preset's roster. Rejected if the persona isn't in it."
           }
         }
       },
@@ -3402,6 +5327,15 @@
           }
         }
       },
+      "PersonaRole": {
+        "type": "string",
+        "description": "What a persona is allowed to do inside a preset.",
+        "enum": [
+          "default",
+          "subagent",
+          "internal"
+        ]
+      },
       "PersonaSummary": {
         "type": "object",
         "required": [
@@ -3432,6 +5366,88 @@
           }
         }
       },
+      "PresetDetail": {
+        "type": "object",
+        "description": "A preset with its roster resolved against what this pod actually has.\n\nTyped rather than assembled ad hoc so it reaches `openapi.json`: both Workshop\nfrontends generate their client types from the spec, and a response described only\nby a prose `description` gives them nothing to generate.",
+        "required": [
+          "preset",
+          "personas"
+        ],
+        "properties": {
+          "personas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RosterPersona"
+            }
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AgentPreset"
+          }
+        }
+      },
+      "PresetPersona": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/PersonaRole"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "PresetSummary": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "description",
+          "default_persona",
+          "persona_count"
+        ],
+        "properties": {
+          "default_persona": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pack_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "persona_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ProjectLayout": {
         "type": "object",
         "required": [
@@ -3440,9 +5456,17 @@
           "skills_dir",
           "flows_dir",
           "sessions_dir",
-          "api_tools_dir"
+          "api_tools_dir",
+          "agent_presets_dir",
+          "agent_instances_dir"
         ],
         "properties": {
+          "agent_instances_dir": {
+            "type": "string"
+          },
+          "agent_presets_dir": {
+            "type": "string"
+          },
           "api_tools_dir": {
             "type": "string"
           },
@@ -3472,14 +5496,34 @@
           "sessions",
           "api_tools",
           "keys",
+          "agent_presets",
+          "agent_instances",
+          "default_agent_preset",
           "layout"
         ],
         "properties": {
+          "agent_instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentInstance"
+            },
+            "description": "Agents that actually exist. Ephemeral ones are excluded — an unfiltered list\nis one row per chat ever started, which is noise, not information."
+          },
+          "agent_presets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PresetSummary"
+            },
+            "description": "Agents this pod can be. Both Workshop clients paint their agent picker from\nthe snapshot, so leaving these out costs an extra round-trip on every load."
+          },
           "api_tools": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ApiToolSummary"
             }
+          },
+          "default_agent_preset": {
+            "type": "string"
           },
           "flows": {
             "type": "array",
@@ -3513,6 +5557,29 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SkillSummary"
+            }
+          }
+        }
+      },
+      "Provides": {
+        "type": "object",
+        "properties": {
+          "integration_packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackRef"
+            }
+          },
+          "personas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }
@@ -3605,6 +5672,47 @@
           }
         }
       },
+      "RosterPersona": {
+        "type": "object",
+        "description": "One entry in a preset's roster.\n\n`installed: false` is the interesting case: the preset names a persona this pod\ndoes not have. A UI should render it disabled with its `error` rather than\nsilently omit it — omission looks like the preset is smaller than it is.",
+        "required": [
+          "slug",
+          "installed"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it could not be resolved. Present only when `installed` is false."
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slug": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "RunFlowOutput": {
         "oneOf": [
           {
@@ -3655,8 +5763,60 @@
           }
         }
       },
+      "SchedulePreview": {
+        "type": "object",
+        "description": "One upcoming-fire preview for a schedule.",
+        "required": [
+          "schedule_id",
+          "description",
+          "next_runs"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of the cadence."
+          },
+          "next_runs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to a few upcoming fire times, RFC-3339. Empty for `manual`."
+          },
+          "schedule_id": {
+            "type": "string",
+            "description": "The schedule's id."
+          }
+        }
+      },
+      "ScheduledFlowRef": {
+        "type": "object",
+        "required": [
+          "flow_id",
+          "schedule_ids"
+        ],
+        "properties": {
+          "flow_id": {
+            "type": "string"
+          },
+          "flow_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absent when the flow file is gone but the binding is not — worth surfacing\nrather than hiding, since it means a stale binding."
+          },
+          "schedule_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SetEnabledRequest": {
         "type": "object",
+        "description": "Kept only so the retired endpoint below still documents the body clients used\nto send; the value is ignored.",
         "required": [
           "enabled"
         ],
@@ -3762,6 +5922,30 @@
           }
         }
       },
+      "UninstallReport": {
+        "type": "object",
+        "required": [
+          "id",
+          "orphaned_agents",
+          "packs_freed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "orphaned_agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Agents left pointing at a preset that no longer exists. Never silently\ndeleted — someone's memories are in there."
+          },
+          "packs_freed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "UpdateChannelRequest": {
         "type": "object",
         "required": [
@@ -3841,6 +6025,18 @@
     {
       "name": "integration-packs",
       "description": "Installable integration packs"
+    },
+    {
+      "name": "agent-packs",
+      "description": "Installable agent packs — an agent plus every persona, skill and integration pack it needs"
+    },
+    {
+      "name": "agent-presets",
+      "description": "Agents this pod can be — a default persona, its callable roster, and the skills and packs they need"
+    },
+    {
+      "name": "agent-instances",
+      "description": "Agents that exist — each with its own memory and conversations"
     },
     {
       "name": "gateway",

@@ -30,13 +30,18 @@ pub struct DiagnosticsSessionSummary {
     /// Present (and `kind == "flow"`) when this session was produced by a flow run.
     #[serde(default)]
     pub flow_id: Option<String>,
+    /// The agent this session ran as, so a list can say which one produced it —
+    /// the question that matters most for a background agent, whose failures land
+    /// here with nobody watching.
+    #[serde(default)]
+    pub instance_id: Option<String>,
     /// Local mode computes this from the session directory; remote mode leaves
     /// it 0 because the agent's snapshot doesn't include it.
     #[serde(default)]
     pub turn_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     #[serde(default)]
     pub timestamp: Option<String>,
@@ -60,6 +65,10 @@ pub struct SessionInfo {
     pub kind: Option<String>,
     #[serde(default)]
     pub flow_id: Option<String>,
+    /// The agent this session ran as. Absent on CLI runs and on sessions written
+    /// before agents existed.
+    #[serde(default)]
+    pub instance_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +164,7 @@ pub fn list_sessions(project_root: &Path) -> Vec<DiagnosticsSessionSummary> {
                 model_name: info.as_ref().and_then(|i| i.model_name.clone()),
                 kind: info.as_ref().and_then(|i| i.kind.clone()),
                 flow_id: info.as_ref().and_then(|i| i.flow_id.clone()),
+                instance_id: info.as_ref().and_then(|i| i.instance_id.clone()),
                 turn_count,
                 id,
             }
@@ -176,19 +186,9 @@ pub fn load_session(project_root: &Path, session_id: &str) -> anyhow::Result<Cha
     let info: SessionInfo = std::fs::read_to_string(session_dir.join("session_info.json"))
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(SessionInfo {
-            timestamp: None,
-            persona_name: None,
-            persona_slug: None,
-            model_name: None,
-            cwd: None,
-            system_prompt: None,
-            tools: Vec::new(),
-            skills: Vec::new(),
-            auto_approve: false,
-            kind: None,
-            flow_id: None,
-        });
+        // Every field is `#[serde(default)]`, so the empty value *is* the default —
+        // spelling it out by hand meant every new field broke two call sites.
+        .unwrap_or_default();
 
     let mut events = Vec::new();
     for entry in std::fs::read_dir(&session_dir)?.flatten() {

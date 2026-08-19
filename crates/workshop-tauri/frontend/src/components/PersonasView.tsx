@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useReportError } from "../hooks/useReportError";
-import type { Persona, ProjectSnapshot } from "../types";
+import type { AgentPresetDetail, Persona, ProjectSnapshot } from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
@@ -84,6 +84,7 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-3xl space-y-4">
+        {!isNew && <UsedByAgents snapshot={snapshot} slug={selectedSlug} />}
         {isNew && (
           <Field label="Slug (filename without .json)">
             <input
@@ -172,6 +173,55 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
         </div>
       </div>
     </div>
+  );
+}
+
+/// Which agents reach this persona.
+///
+/// Deleting a persona used to be a guess: nothing told you whether an agent's roster
+/// named it, and finding out meant opening every preset. It matters more now than it
+/// used to — a preset naming a missing persona is a broken agent, not a cosmetic
+/// gap, so the reverse lookup is the difference between an informed delete and a
+/// hopeful one.
+function UsedByAgents({
+  snapshot,
+  slug,
+}: {
+  snapshot: ProjectSnapshot;
+  slug: string;
+}) {
+  const [users, setUsers] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    const presets = snapshot.agent_presets ?? [];
+    if (presets.length === 0) {
+      setUsers([]);
+      return;
+    }
+    let cancelled = false;
+    setUsers(null);
+    Promise.all(
+      presets.map((p) =>
+        invoke<AgentPresetDetail>("get_agent_preset", { slug: p.slug })
+          .then((d) => (d.personas.some((rp) => rp.slug === slug) ? p.name : null))
+          .catch(() => null),
+      ),
+    ).then((names) => {
+      if (!cancelled) setUsers(names.filter((n): n is string => !!n));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.agent_presets, slug]);
+
+  if (users === null || users.length === 0) return null;
+
+  return (
+    <p className="px-3 py-2 bg-surface-1 border border-surface-3 rounded text-xs text-gray-400">
+      Used by {users.length} agent{users.length === 1 ? "" : "s"}:{" "}
+      <span className="text-gray-300">{users.join(", ")}</span>. Deleting this persona
+      leaves {users.length === 1 ? "it" : "them"} naming something that is not there.
+    </p>
   );
 }
 

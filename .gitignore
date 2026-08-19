@@ -4,3 +4,7 @@
 **/gen/
 .env
 .DS_Store
+
+# Scratch: transfer archives and files staged for manual deletion.
+/_to_delete
+/_sync

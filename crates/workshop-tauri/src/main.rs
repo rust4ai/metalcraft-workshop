@@ -8,9 +8,15 @@ use tauri::{Emitter, Manager};
 
 use workshop_api::commands::{FileKind, WorkshopEvent};
 use workshop_api::{
+    agents::{
+        AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
+        InstanceMemory, InstancePatch,
+    },
     api_tools::{ApiToolConfig, ApiToolSummary},
     chat::{ChatDetail, ChatEvent, ChatSummary, RunFlowResult},
-    connection::{LocalConnection, ProjectConnection, RemoteConnection, ScheduledTask},
+    connection::{
+        LocalConnection, NewChat, ProjectConnection, RemoteConnection, ScheduledTask,
+    },
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     gateway::{Channel, GatewayEvent},
@@ -590,16 +596,135 @@ async fn get_chat(
     conn.get_chat(&id).await.map_err(|e| e.to_string())
 }
 
+/// Start a chat.
+///
+/// Every argument is optional: a person picks an **agent**, and the preset supplies
+/// the persona. `persona_slug` is the Advanced escape hatch and must be inside that
+/// agent's roster — the pod enforces it, so a stale UI cannot widen the roster by
+/// asking nicely. Passing nothing reproduces the pre-preset behaviour.
 #[tauri::command]
 async fn create_chat(
-    persona_slug: String,
+    persona_slug: Option<String>,
     model_name: Option<String>,
+    agent_preset: Option<String>,
+    instance_id: Option<String>,
+    name: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<ChatSummary, String> {
     let conn = require_connection(&state)?;
-    conn.create_chat(&persona_slug, model_name.as_deref())
+    conn.create_chat(&NewChat {
+        agent_preset: agent_preset.as_deref(),
+        persona_slug: persona_slug.as_deref(),
+        instance_id: instance_id.as_deref(),
+        model_name: model_name.as_deref(),
+        name: name.as_deref(),
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// ---- Agents ----
+//
+// Presets are the template; instances are the agents that exist. Both are readable
+// in local mode (they are files); only the pod can mint or rename an instance,
+// because that is bound up with memory layout it owns.
+
+#[tauri::command]
+async fn list_agent_presets(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<AgentPresetSummary>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_agent_presets().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_agent_preset(
+    slug: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<AgentPresetDetail, String> {
+    let conn = require_connection(&state)?;
+    conn.get_agent_preset(&slug).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn save_agent_preset(
+    slug: String,
+    preset: AgentPreset,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.save_agent_preset(&slug, &preset).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn delete_agent_preset(
+    slug: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let conn = require_connection(&state)?;
+    conn.delete_agent_preset(&slug).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_agent_instances(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<AgentInstance>, String> {
+    let conn = require_connection(&state)?;
+    conn.list_agent_instances().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_agent_instance(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<InstanceDetail, String> {
+    let conn = require_connection(&state)?;
+    conn.get_agent_instance(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_agent_instance(
+    agent_preset: Option<String>,
+    name: Option<String>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<AgentInstance, String> {
+    let conn = require_connection(&state)?;
+    conn.create_agent_instance(agent_preset.as_deref(), name.as_deref())
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Rename an agent, move it within its roster, or pin it as persistent. Naming one
+/// also promotes it — which is the one-click "keep this" the chat header offers.
+#[tauri::command]
+async fn patch_agent_instance(
+    id: String,
+    patch: InstancePatch,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<AgentInstance, String> {
+    let conn = require_connection(&state)?;
+    conn.patch_agent_instance(&id, &patch).await.map_err(|e| e.to_string())
+}
+
+/// Returns how many conversations survived. Deleting an agent deliberately keeps its
+/// transcripts, and the confirm dialog should say so rather than let the user guess.
+#[tauri::command]
+async fn delete_agent_instance(
+    id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    let conn = require_connection(&state)?;
+    conn.delete_agent_instance(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn agent_instance_memory(
+    id: String,
+    limit: Option<usize>,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<InstanceMemory, String> {
+    let conn = require_connection(&state)?;
+    conn.agent_instance_memory(&id, limit).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1483,6 +1608,16 @@ fn main() {
             list_chats,
             get_chat,
             create_chat,
+            list_agent_presets,
+            get_agent_preset,
+            save_agent_preset,
+            delete_agent_preset,
+            list_agent_instances,
+            get_agent_instance,
+            create_agent_instance,
+            patch_agent_instance,
+            delete_agent_instance,
+            agent_instance_memory,
             delete_chat,
             chat_turn,
             subscribe_chat_events,

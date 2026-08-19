@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::agents::{self, AgentInstance, AgentPresetSummary};
 use crate::api_tools::{self, ApiToolSummary};
 use crate::diagnostics::{self, DiagnosticsSessionSummary};
 use crate::flows;
@@ -28,6 +29,18 @@ pub struct ProjectSnapshot {
     pub api_tools: Vec<ApiToolSummary>,
     #[serde(default)]
     pub keys: Vec<KeySummary>,
+    /// What this pod can be. The chat entry point picks one of these, not a persona.
+    #[serde(default)]
+    pub agent_presets: Vec<AgentPresetSummary>,
+    /// Agents that actually exist. Persistent ones only from the remote backend —
+    /// every chat ever started mints an ephemeral instance, so an unfiltered list is
+    /// one row per chat and pure noise.
+    #[serde(default)]
+    pub agent_instances: Vec<AgentInstance>,
+    /// The preset a new chat gets if nobody chooses. Absent on an agent old enough
+    /// to predate presets, where the persona picker is still the entry point.
+    #[serde(default)]
+    pub default_agent_preset: Option<String>,
     pub layout: ProjectLayout,
 }
 
@@ -45,6 +58,10 @@ pub struct ProjectLayout {
     pub has_flows: bool,
     pub has_session_logs: bool,
     pub has_api_tools: bool,
+    #[serde(default)]
+    pub has_agent_presets: bool,
+    #[serde(default)]
+    pub has_agent_instances: bool,
 }
 
 pub fn scan_local(root: &Path) -> ProjectSnapshot {
@@ -57,12 +74,23 @@ pub fn scan_local(root: &Path) -> ProjectSnapshot {
         sessions: diagnostics::list_sessions(root),
         api_tools: api_tools::list(root),
         keys: keys::list(root),
+        agent_presets: agents::list_presets(root),
+        // Local mode has no TTL reaper running, so it shows what is on disk. That is
+        // the honest answer for a directory you opened yourself.
+        agent_instances: agents::list_instances(root),
+        default_agent_preset: agents::list_presets(root)
+            .iter()
+            .map(|p| p.slug.clone())
+            .find(|s| s == "general-agent")
+            .or_else(|| agents::list_presets(root).first().map(|p| p.slug.clone())),
         layout: ProjectLayout {
             has_personas: personas::personas_dir(root).is_dir(),
             has_skills: skills::skills_dir(root).is_dir(),
             has_flows: flows::flows_dir(root).is_dir(),
             has_session_logs: diagnostics::logs_dir(root).is_dir(),
             has_api_tools: api_tools::api_tools_dir(root).is_dir(),
+            has_agent_presets: agents::presets_dir(root).is_dir(),
+            has_agent_instances: agents::instances_dir(root).is_dir(),
         },
     }
 }

@@ -9,7 +9,7 @@ interface Props {
   onSelect: (id: string | null) => void;
 }
 
-export default function SessionsView({ selectedId }: Props) {
+export default function SessionsView({ snapshot, selectedId }: Props) {
   const [timeline, setTimeline] = useState<ChatTimeline | null>(null);
   const reportError = useReportError();
 
@@ -48,6 +48,15 @@ export default function SessionsView({ selectedId }: Props) {
           {info.timestamp ?? selectedId}
         </h2>
         <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-3">
+          {/* Which agent produced this. It matters most for a background agent,
+              whose failures land here with nobody watching. */}
+          {info.instance_id && (
+            <span>
+              agent:{" "}
+              {(snapshot.agent_instances ?? []).find((a) => a.id === info.instance_id)
+                ?.name ?? info.instance_id}
+            </span>
+          )}
           {info.persona_slug && <span>persona: {info.persona_slug}</span>}
           {info.model_name && <span>model: {info.model_name}</span>}
           {info.cwd && <span className="font-mono truncate">cwd: {info.cwd}</span>}

@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import PersonasView from "./components/PersonasView";
 import SkillsView from "./components/SkillsView";
 import FlowsView from "./components/FlowsView";
+import AgentsView from "./components/AgentsView";
 import ChatsView from "./components/ChatsView";
 import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
@@ -16,6 +17,7 @@ import NetworkView from "./components/NetworkView";
 import SettingsView from "./components/SettingsView";
 
 export type Section =
+  | "agents"
   | "personas"
   | "skills"
   | "flows"
@@ -138,6 +140,20 @@ export default function App() {
                 setSelectedId(sid);
                 setSection("sessions");
                 workshop.refreshSessions();
+              }}
+            />
+          )}
+          {section === "agents" && (
+            <AgentsView
+              snapshot={snap}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onChanged={() => {
+                // Creating/renaming/deleting an agent changes the snapshot the
+                // chat picker reads, so re-pull it rather than let the picker
+                // offer an agent that no longer exists.
+                workshop.refreshSnapshot();
+                workshop.refreshChats();
               }}
             />
           )}

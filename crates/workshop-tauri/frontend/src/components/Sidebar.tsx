@@ -16,6 +16,9 @@ interface Props {
 }
 
 const SECTIONS: { id: Section; label: string }[] = [
+  // Agents lead: picking one is how work starts now. Personas stay — authoring them
+  // is still a real task, it is just no longer the entry point.
+  { id: "agents", label: "Agents" },
   { id: "personas", label: "Personas" },
   { id: "skills", label: "Skills" },
   { id: "flows", label: "Flows" },
@@ -190,6 +193,10 @@ function listItems(
   sessions: DiagnosticsSessionSummary[],
 ): SidebarItem[] {
   switch (s) {
+    case "agents":
+      // The Agents panel renders both its lists in the main pane — a preset and an
+      // agent are different enough that one flat sidebar list would lie about it.
+      return [];
     case "personas":
       return snap.personas.map((p) => ({
         id: p.slug,
@@ -211,17 +218,28 @@ function listItems(
         sub: `${f.node_count} nodes${f.enabled ? " • enabled" : ""}`,
       }));
     case "chats":
+      // Label by the agent the conversation belongs to, falling back to the persona
+      // for chats that predate agents. Which agent said a thing is the question
+      // someone scanning this list is actually asking.
       return chats.map((c) => ({
         id: c.id,
-        label: c.persona_slug,
-        sub: [c.model_name, `${c.turn_count} turns`].filter(Boolean).join(" • "),
+        label: agentName(snap, c.instance_id) ?? c.persona_slug,
+        sub: [
+          c.instance_id ? c.persona_slug : null,
+          c.model_name,
+          `${c.turn_count} turns`,
+        ]
+          .filter(Boolean)
+          .join(" • "),
       }));
     case "sessions":
       return sessions.map((s) => ({
         id: s.id,
         label: s.kind === "flow" && s.flow_id ? `⚙ ${s.flow_id}` : s.timestamp,
         sub: [
-          s.kind === "flow" ? s.timestamp : s.persona_slug,
+          s.kind === "flow"
+            ? s.timestamp
+            : (agentName(snap, s.instance_id) ?? s.persona_slug),
           s.model_name,
           `${s.turn_count} turns`,
         ]
@@ -255,8 +273,20 @@ function listItems(
   }
 }
 
+/// The display name of the agent a conversation belongs to.
+///
+/// Only persistent agents are in the snapshot, so an ephemeral one falls through to
+/// `undefined` and the caller shows the persona instead — which is right: an unnamed
+/// agent has no name worth showing.
+function agentName(snap: ProjectSnapshot, instanceId?: string | null): string | undefined {
+  if (!instanceId) return undefined;
+  return (snap.agent_instances ?? []).find((a) => a.id === instanceId)?.name;
+}
+
 function emptyMessage(snap: ProjectSnapshot, s: Section): string {
   switch (s) {
+    case "agents":
+      return "Agents and presets are listed in the main panel.";
     case "personas":
       return snap.layout.has_personas ? "No personas yet." : "personas/ directory not found.";
     case "skills":

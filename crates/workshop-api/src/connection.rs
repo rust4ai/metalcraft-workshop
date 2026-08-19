@@ -12,6 +12,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use crate::agents::{
+    self, AgentInstance, AgentPreset, AgentPresetDetail, AgentPresetSummary, InstanceDetail,
+    InstanceMemory, InstancePatch,
+};
 use crate::api_tools::{self, ApiToolConfig, ApiToolSummary};
 use crate::chat::{self, ChatDetail, ChatEvent, ChatSummary, RunFlowResult};
 use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
@@ -53,6 +57,25 @@ pub struct ScheduledTask {
     #[serde(default)]
     pub persona: Option<String>,
     pub status: String,
+}
+
+/// What a new chat is being started as.
+///
+/// Every field is optional because the agent has a defensible default for each: the
+/// default preset, that preset's default persona, a freshly minted instance. Passing
+/// nothing at all reproduces the pre-preset behaviour exactly.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct NewChat<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_preset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persona_slug: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<&'a str>,
 }
 
 #[async_trait]
@@ -137,12 +160,48 @@ pub trait ProjectConnection: Send + Sync {
         flow_id: Option<&str>,
     ) -> anyhow::Result<Vec<serde_json::Value>>;
 
+    // ---- Agents ----
+    //
+    // Presets are readable in both modes — they are files, like personas. Instances
+    // are readable locally too, but only the agent can *mint* one, because minting
+    // is bound up with memory layout it owns.
+
+    async fn list_agent_presets(&self) -> anyhow::Result<Vec<AgentPresetSummary>>;
+    async fn get_agent_preset(&self, slug: &str) -> anyhow::Result<AgentPresetDetail>;
+    async fn save_agent_preset(&self, slug: &str, preset: &AgentPreset) -> anyhow::Result<()>;
+    async fn delete_agent_preset(&self, slug: &str) -> anyhow::Result<()>;
+
+    async fn list_agent_instances(&self) -> anyhow::Result<Vec<AgentInstance>>;
+    async fn get_agent_instance(&self, id: &str) -> anyhow::Result<InstanceDetail>;
+    async fn create_agent_instance(
+        &self,
+        agent_preset: Option<&str>,
+        name: Option<&str>,
+    ) -> anyhow::Result<AgentInstance>;
+    async fn patch_agent_instance(
+        &self,
+        id: &str,
+        patch: &InstancePatch,
+    ) -> anyhow::Result<AgentInstance>;
+    /// Returns how many conversations were kept — deleting an agent must not lose
+    /// transcripts, and the dialog should be able to say so.
+    async fn delete_agent_instance(&self, id: &str) -> anyhow::Result<usize>;
+    async fn agent_instance_memory(
+        &self,
+        id: &str,
+        limit: Option<usize>,
+    ) -> anyhow::Result<InstanceMemory>;
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>>;
     async fn get_chat(&self, id: &str) -> anyhow::Result<ChatDetail>;
+    /// Start a chat.
+    ///
+    /// `agent_preset` is the thing a person picks; `persona_slug` is the Advanced
+    /// escape hatch and must be inside that preset's roster (the agent enforces it).
+    /// `instance_id` continues an existing agent instead of minting a new one.
     async fn create_chat(
         &self,
-        persona_slug: &str,
-        model_name: Option<&str>,
+        req: &NewChat<'_>,
     ) -> anyhow::Result<ChatSummary>;
     async fn delete_chat(&self, id: &str) -> anyhow::Result<()>;
 
@@ -353,17 +412,68 @@ impl ProjectConnection for LocalConnection {
     ) -> anyhow::Result<Vec<serde_json::Value>> {
         Err(chat::not_supported_in_local_mode("List flow runs"))
     }
+    // Presets and instances are files, so a local directory can answer for them —
+    // which matters, because the desktop app's local mode is a real way to inspect a
+    // pod's data dir without the agent running.
+    async fn list_agent_presets(&self) -> anyhow::Result<Vec<AgentPresetSummary>> {
+        Ok(agents::list_presets(&self.root))
+    }
+    async fn get_agent_preset(&self, slug: &str) -> anyhow::Result<AgentPresetDetail> {
+        agents::load_preset_detail(&self.root, slug)
+    }
+    async fn save_agent_preset(&self, slug: &str, preset: &AgentPreset) -> anyhow::Result<()> {
+        agents::save_preset(&self.root, slug, preset)
+    }
+    async fn delete_agent_preset(&self, slug: &str) -> anyhow::Result<()> {
+        agents::delete_preset(&self.root, slug)
+    }
+
+    async fn list_agent_instances(&self) -> anyhow::Result<Vec<AgentInstance>> {
+        Ok(agents::list_instances(&self.root))
+    }
+    async fn get_agent_instance(&self, id: &str) -> anyhow::Result<InstanceDetail> {
+        Ok(InstanceDetail {
+            instance: agents::load_instance(&self.root, id)?,
+            // Conversations and schedules live behind the agent's own indexes, not in
+            // a file this reader can walk. Empty is honest; inventing them would not be.
+            conversations: Vec::new(),
+            scheduled: Vec::new(),
+        })
+    }
+    async fn create_agent_instance(
+        &self,
+        _agent_preset: Option<&str>,
+        _name: Option<&str>,
+    ) -> anyhow::Result<AgentInstance> {
+        // Minting an agent allocates its memory layers, which is the agent's job.
+        Err(chat::not_supported_in_local_mode("Creating an agent"))
+    }
+    async fn patch_agent_instance(
+        &self,
+        _id: &str,
+        _patch: &InstancePatch,
+    ) -> anyhow::Result<AgentInstance> {
+        Err(chat::not_supported_in_local_mode("Renaming an agent"))
+    }
+    async fn delete_agent_instance(&self, _id: &str) -> anyhow::Result<usize> {
+        Err(chat::not_supported_in_local_mode("Deleting an agent"))
+    }
+    async fn agent_instance_memory(
+        &self,
+        _id: &str,
+        _limit: Option<usize>,
+    ) -> anyhow::Result<InstanceMemory> {
+        // Recall is a runtime concern — the index is the agent's, not a file.
+        Err(chat::not_supported_in_local_mode("Agent memory"))
+    }
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
         Err(chat::not_supported_in_local_mode("Chat"))
     }
     async fn get_chat(&self, _id: &str) -> anyhow::Result<ChatDetail> {
         Err(chat::not_supported_in_local_mode("Chat"))
     }
-    async fn create_chat(
-        &self,
-        _persona_slug: &str,
-        _model_name: Option<&str>,
-    ) -> anyhow::Result<ChatSummary> {
+    async fn create_chat(&self, _req: &NewChat<'_>) -> anyhow::Result<ChatSummary> {
         Err(chat::not_supported_in_local_mode("Chat"))
     }
     async fn delete_chat(&self, _id: &str) -> anyhow::Result<()> {
@@ -575,6 +685,12 @@ impl RemoteConnection {
             .bearer_auth(self.bearer())
             .timeout(Self::REQUEST_TIMEOUT)
     }
+    fn patch(&self, path: &str) -> reqwest::RequestBuilder {
+        self.client
+            .patch(self.url(path))
+            .bearer_auth(self.bearer())
+            .timeout(Self::REQUEST_TIMEOUT)
+    }
 }
 
 #[derive(Deserialize)]
@@ -626,6 +742,12 @@ struct RemoteSnapshot {
     api_tools: Vec<ApiToolSummary>,
     #[serde(default)]
     keys: Vec<KeySummary>,
+    #[serde(default)]
+    agent_presets: Vec<agents::AgentPresetSummary>,
+    #[serde(default)]
+    agent_instances: Vec<agents::AgentInstance>,
+    #[serde(default)]
+    default_agent_preset: Option<String>,
     layout: RemoteLayout,
 }
 
@@ -638,6 +760,12 @@ struct RemoteLayout {
     flows_dir: String,
     sessions_dir: String,
     api_tools_dir: String,
+    /// Absent on an agent that predates presets — which is exactly what the
+    /// `has_agent_presets` flag below is for.
+    #[serde(default)]
+    agent_presets_dir: String,
+    #[serde(default)]
+    agent_instances_dir: String,
 }
 
 /// Wire shape returned by `GET /api/v1/diagnostics/{id}`: a flat list of
@@ -697,12 +825,17 @@ impl ProjectConnection for RemoteConnection {
             sessions: snap.sessions,
             api_tools: snap.api_tools,
             keys: snap.keys,
+            agent_presets: snap.agent_presets,
+            agent_instances: snap.agent_instances,
+            default_agent_preset: snap.default_agent_preset,
             layout: ProjectLayout {
                 has_personas: !snap.layout.personas_dir.is_empty(),
                 has_skills: !snap.layout.skills_dir.is_empty(),
                 has_flows: !snap.layout.flows_dir.is_empty(),
                 has_session_logs: !snap.layout.sessions_dir.is_empty(),
                 has_api_tools: !snap.layout.api_tools_dir.is_empty(),
+                has_agent_presets: !snap.layout.agent_presets_dir.is_empty(),
+                has_agent_instances: !snap.layout.agent_instances_dir.is_empty(),
             },
         })
     }
@@ -830,19 +963,7 @@ impl ProjectConnection for RemoteConnection {
         )
         .await?;
         let raw: RemoteDiagnosticsSession = resp.json().await?;
-        let session = raw.session_info.unwrap_or(diagnostics::SessionInfo {
-            timestamp: None,
-            persona_name: None,
-            persona_slug: None,
-            model_name: None,
-            cwd: None,
-            system_prompt: None,
-            tools: Vec::new(),
-            skills: Vec::new(),
-            auto_approve: false,
-            kind: None,
-            flow_id: None,
-        });
+        let session = raw.session_info.unwrap_or_default();
         let mut events = Vec::new();
         for entry in raw.timeline {
             if let Some(ev) = diagnostics::parse_timeline_entry(&entry.file, entry.data) {
@@ -1044,6 +1165,145 @@ impl ProjectConnection for RemoteConnection {
         Ok(resp.json().await?)
     }
 
+    async fn list_agent_presets(&self) -> anyhow::Result<Vec<AgentPresetSummary>> {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(default)]
+            presets: Vec<AgentPresetSummary>,
+        }
+        let resp = self.get("/api/v1/agent-presets").send().await?;
+        // An agent from before presets 404s. That is not an error — it means this pod
+        // has no agents to pick from, and the UI should fall back to the persona
+        // picker rather than show a failure.
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp = ok_or_err(resp, "GET agent-presets").await?;
+        let w: Wrapper = decode_json(resp, "GET agent-presets").await?;
+        Ok(w.presets)
+    }
+
+    async fn get_agent_preset(&self, slug: &str) -> anyhow::Result<AgentPresetDetail> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/agent-presets/{slug}")).send().await?,
+            "GET agent-preset",
+        )
+        .await?;
+        decode_json(resp, "GET agent-preset").await
+    }
+
+    async fn save_agent_preset(&self, slug: &str, preset: &AgentPreset) -> anyhow::Result<()> {
+        ok_or_err(
+            self.put(&format!("/api/v1/agent-presets/{slug}"))
+                .json(preset)
+                .send()
+                .await?,
+            "PUT agent-preset",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_agent_preset(&self, slug: &str) -> anyhow::Result<()> {
+        ok_or_err(
+            self.delete(&format!("/api/v1/agent-presets/{slug}")).send().await?,
+            "DELETE agent-preset",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn list_agent_instances(&self) -> anyhow::Result<Vec<AgentInstance>> {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(default)]
+            instances: Vec<AgentInstance>,
+        }
+        let resp = self.get("/api/v1/agents/instances").send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp = ok_or_err(resp, "GET agent instances").await?;
+        let w: Wrapper = decode_json(resp, "GET agent instances").await?;
+        Ok(w.instances)
+    }
+
+    async fn get_agent_instance(&self, id: &str) -> anyhow::Result<InstanceDetail> {
+        let resp = ok_or_err(
+            self.get(&format!("/api/v1/agents/instances/{id}")).send().await?,
+            "GET agent instance",
+        )
+        .await?;
+        decode_json(resp, "GET agent instance").await
+    }
+
+    async fn create_agent_instance(
+        &self,
+        agent_preset: Option<&str>,
+        name: Option<&str>,
+    ) -> anyhow::Result<AgentInstance> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            agent_preset: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            name: Option<&'a str>,
+        }
+        let resp = ok_or_err(
+            self.post("/api/v1/agents/instances")
+                .json(&Body { agent_preset, name })
+                .send()
+                .await?,
+            "POST agent instance",
+        )
+        .await?;
+        decode_json(resp, "POST agent instance").await
+    }
+
+    async fn patch_agent_instance(
+        &self,
+        id: &str,
+        patch: &InstancePatch,
+    ) -> anyhow::Result<AgentInstance> {
+        let resp = ok_or_err(
+            self.patch(&format!("/api/v1/agents/instances/{id}"))
+                .json(patch)
+                .send()
+                .await?,
+            "PATCH agent instance",
+        )
+        .await?;
+        decode_json(resp, "PATCH agent instance").await
+    }
+
+    async fn delete_agent_instance(&self, id: &str) -> anyhow::Result<usize> {
+        #[derive(Deserialize)]
+        struct Deleted {
+            #[serde(default)]
+            conversations_kept: usize,
+        }
+        let resp = ok_or_err(
+            self.delete(&format!("/api/v1/agents/instances/{id}")).send().await?,
+            "DELETE agent instance",
+        )
+        .await?;
+        let d: Deleted = decode_json(resp, "DELETE agent instance").await?;
+        Ok(d.conversations_kept)
+    }
+
+    async fn agent_instance_memory(
+        &self,
+        id: &str,
+        limit: Option<usize>,
+    ) -> anyhow::Result<InstanceMemory> {
+        let path = match limit {
+            Some(n) => format!("/api/v1/agents/instances/{id}/memory?limit={n}"),
+            None => format!("/api/v1/agents/instances/{id}/memory"),
+        };
+        let resp = ok_or_err(self.get(&path).send().await?, "GET agent memory").await?;
+        decode_json(resp, "GET agent memory").await
+    }
+
     async fn list_chats(&self) -> anyhow::Result<Vec<ChatSummary>> {
         let resp = ok_or_err(self.get("/api/v1/chats").send().await?, "GET chats").await?;
         Ok(resp.json().await?)
@@ -1056,22 +1316,9 @@ impl ProjectConnection for RemoteConnection {
         .await?;
         Ok(resp.json().await?)
     }
-    async fn create_chat(
-        &self,
-        persona_slug: &str,
-        model_name: Option<&str>,
-    ) -> anyhow::Result<ChatSummary> {
-        #[derive(serde::Serialize)]
-        struct Body<'a> {
-            persona_slug: &'a str,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            model_name: Option<&'a str>,
-        }
+    async fn create_chat(&self, req: &NewChat<'_>) -> anyhow::Result<ChatSummary> {
         let resp = ok_or_err(
-            self.post("/api/v1/chats")
-                .json(&Body { persona_slug, model_name })
-                .send()
-                .await?,
+            self.post("/api/v1/chats").json(req).send().await?,
             "POST chat",
         )
         .await?;

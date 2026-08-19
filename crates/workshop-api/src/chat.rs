@@ -14,6 +14,11 @@ pub struct ChatSummary {
     pub model_name: String,
     pub created_at: String,
     pub turn_count: usize,
+    /// The agent this conversation belongs to. Absent on chats started before
+    /// agents existed — the agent backfills those at startup, but a client should
+    /// not fall over if it meets one first.
+    #[serde(default)]
+    pub instance_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +27,8 @@ pub struct ChatDetail {
     pub persona_slug: String,
     pub model_name: String,
     pub created_at: String,
+    #[serde(default)]
+    pub instance_id: Option<String>,
     pub messages: Vec<ChatWireMessage>,
 }
 

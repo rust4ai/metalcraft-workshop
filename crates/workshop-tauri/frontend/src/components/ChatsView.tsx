@@ -9,6 +9,7 @@ import type {
   ChatSummary,
   ChatWireMessage,
   ProjectSnapshot,
+  RosterPersona,
   ScheduledTask,
 } from "../types";
 
@@ -78,47 +79,65 @@ function NewChatPanel({
   onCreated: (id: string) => void;
 }) {
   const reportError = useReportError();
-  // Initial default before the agent's config loads: the orchestrator if
-  // installed (it delegates to the right specialist for anything), else first.
-  const fallbackSlug =
-    snapshot.personas.find((p) => p.slug === "orchestrator-agent")?.slug ??
-    snapshot.personas[0]?.slug ??
-    "";
-  const [persona, setPersona] = useState(fallbackSlug);
-  // The persona picker is hidden until the user opts into a custom persona.
-  const [customPersona, setCustomPersona] = useState(false);
+
+  // Starting a chat asks which **agent**, not which persona. The persona is an
+  // implementation detail of the agent; it survives behind Advanced, scoped to the
+  // agent's own roster rather than every persona on the pod.
+  const presets = snapshot.agent_presets ?? [];
+  const [preset, setPreset] = useState(
+    () => snapshot.default_agent_preset ?? presets[0]?.slug ?? "",
+  );
+  const [roster, setRoster] = useState<RosterPersona[] | null>(null);
+  const [persona, setPersona] = useState<string>("");
+  const [advanced, setAdvanced] = useState(false);
+  // Continue an existing agent rather than minting one. Only persistent agents are
+  // offered — ephemeral ones are per-chat scratch and picking one is never useful.
+  const [instanceId, setInstanceId] = useState<string>("");
   const [creating, setCreating] = useState(false);
 
-  // The agent decides its own default persona (env METALCRAFT_DEFAULT_PERSONA,
-  // via /api/v1/info). Apply it once on mount if it's actually installed and the
-  // user hasn't already reached for the custom picker.
+  // An agent old enough to predate presets sends none. Fall back to the persona
+  // picker rather than showing an empty chooser and refusing to start a chat.
+  const legacy = presets.length === 0;
+
+  // The chosen agent's roster, which is what Advanced offers. Fetched per selection
+  // because it carries `installed` per persona — the state a pod can report and no
+  // client could previously show.
   useEffect(() => {
+    if (!preset) return;
     let cancelled = false;
-    invoke<AgentInfo>("agent_info")
-      .then((info) => {
-        const wanted = info.default_persona;
-        if (cancelled || !wanted) return;
-        if (snapshot.personas.some((p) => p.slug === wanted)) {
-          setCustomPersona((custom) => {
-            if (!custom) setPersona(wanted);
-            return custom;
-          });
-        }
+    setRoster(null);
+    invoke<{ preset: unknown; personas: RosterPersona[] }>("get_agent_preset", {
+      slug: preset,
+    })
+      .then((detail) => {
+        if (cancelled) return;
+        setRoster(detail.personas);
+        // Reset an Advanced choice that the new agent cannot reach, rather than
+        // sending a persona the pod will reject.
+        setPersona((current) =>
+          detail.personas.some((p) => p.slug === current && p.installed) ? current : "",
+        );
       })
-      .catch(() => {}); // older agent / local mode → keep the fallback
+      .catch(() => {
+        if (!cancelled) setRoster([]);
+      });
     return () => {
       cancelled = true;
     };
-  }, [snapshot.personas]);
+  }, [preset]);
 
-  const selected = snapshot.personas.find((p) => p.slug === persona);
+  const selectedPreset = presets.find((p) => p.slug === preset);
+  const agents = (snapshot.agent_instances ?? []).filter(
+    (i) => i.persistent && (!preset || i.agent_preset === preset),
+  );
 
   const create = async () => {
-    if (!persona) return;
     setCreating(true);
     try {
       const summary = await invoke<ChatSummary>("create_chat", {
-        personaSlug: persona,
+        agentPreset: legacy ? undefined : preset || undefined,
+        personaSlug: advanced && persona ? persona : undefined,
+        instanceId: instanceId || undefined,
       });
       onCreated(summary.id);
     } catch (e) {
@@ -130,59 +149,184 @@ function NewChatPanel({
 
   return (
     <div className="h-full flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-surface-1 border border-surface-3 rounded p-6 space-y-3">
+      <div className="w-full max-w-lg bg-surface-1 border border-surface-3 rounded p-6 space-y-4">
         <h3 className="text-sm font-semibold text-accent">New chat</h3>
-        <p className="text-xs text-gray-400">
-          Spin up an ad-hoc chat against this agent. Chats are persisted on
-          the agent across restarts.
-        </p>
 
-        {customPersona ? (
-          <label className="block">
-            <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-              Persona
-            </span>
-            <select
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
-            >
-              {snapshot.personas.map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.name} ({p.slug})
-                </option>
-              ))}
-            </select>
-          </label>
+        {legacy ? (
+          <LegacyPersonaPicker
+            snapshot={snapshot}
+            persona={persona}
+            onChange={setPersona}
+          />
         ) : (
-          <div className="flex items-center justify-between gap-3 px-3 py-2 bg-surface-2 border border-surface-3 rounded">
-            <div className="min-w-0">
-              <div className="text-xs uppercase tracking-wide text-gray-500">
-                Persona
+          <>
+            <div>
+              <span className="block text-xs uppercase tracking-wide text-gray-500 mb-2">
+                Agent
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {presets.map((p) => (
+                  <button
+                    key={p.slug}
+                    type="button"
+                    onClick={() => setPreset(p.slug)}
+                    className={`text-left px-3 py-2 rounded border text-sm transition-colors ${
+                      p.slug === preset
+                        ? "border-accent bg-accent/10"
+                        : "border-surface-3 bg-surface-2 hover:border-surface-3/60"
+                    }`}
+                  >
+                    <div className="text-gray-100 truncate">{p.name}</div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {p.tagline ?? `${p.persona_count} personas`}
+                    </div>
+                  </button>
+                ))}
               </div>
-              <div className="text-sm text-gray-200 truncate">
-                {selected?.name ?? persona ?? "—"}
-              </div>
+              {selectedPreset?.description && (
+                <p className="mt-2 text-xs text-gray-500">{selectedPreset.description}</p>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setCustomPersona(true)}
-              className="shrink-0 text-xs text-accent-light/80 hover:text-accent-light underline"
-            >
-              Use custom persona
-            </button>
-          </div>
+
+            {agents.length > 0 && (
+              <label className="block">
+                <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+                  Continue an existing agent
+                </span>
+                <select
+                  value={instanceId}
+                  onChange={(e) => setInstanceId(e.target.value)}
+                  className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+                >
+                  <option value="">Start a new one</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-gray-500">
+                  A named agent keeps what it learns across conversations.
+                </span>
+              </label>
+            )}
+
+            {advanced ? (
+              <label className="block">
+                <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+                  Start as a specific persona
+                </span>
+                <select
+                  value={persona}
+                  onChange={(e) => setPersona(e.target.value)}
+                  className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+                >
+                  <option value="">
+                    {selectedPreset
+                      ? `Default (${selectedPreset.default_persona})`
+                      : "Default"}
+                  </option>
+                  {(roster ?? []).map((p) => (
+                    <option key={p.slug} value={p.slug} disabled={!p.installed}>
+                      {p.name || p.slug}
+                      {p.installed ? "" : " — not installed"}
+                    </option>
+                  ))}
+                </select>
+                {roster === null && (
+                  <span className="mt-1 block text-xs text-gray-500">Loading roster…</span>
+                )}
+                {/* A preset naming a persona this pod lacks is a real state the pod
+                    reports. Say so, rather than hiding the row and making the agent
+                    look smaller than it is. */}
+                {roster?.some((p) => !p.installed) && (
+                  <span className="mt-1 block text-xs text-amber-400/80">
+                    This agent names {roster.filter((p) => !p.installed).length} persona(s)
+                    this pod does not have.
+                  </span>
+                )}
+              </label>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAdvanced(true)}
+                className="text-xs text-accent-light/80 hover:text-accent-light underline"
+              >
+                Advanced — start as a specific persona
+              </button>
+            )}
+          </>
         )}
 
         <button
           onClick={create}
-          disabled={creating || !persona}
+          disabled={creating || (legacy && !persona) || (!legacy && !preset)}
           className="w-full px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
         >
           {creating ? "Creating…" : "Start chat"}
         </button>
       </div>
     </div>
+  );
+}
+
+/// The pre-presets picker, kept for pods that have not upgraded yet. Deleting it
+/// would make this build refuse to start a chat against an older agent, which is a
+/// worse failure than an out-of-date-looking form.
+function LegacyPersonaPicker({
+  snapshot,
+  persona,
+  onChange,
+}: {
+  snapshot: ProjectSnapshot;
+  persona: string;
+  onChange: (slug: string) => void;
+}) {
+  // Default to the agent's configured persona if it is installed, else the
+  // orchestrator, else whatever is first.
+  useEffect(() => {
+    if (persona) return;
+    const fallback =
+      snapshot.personas.find((p) => p.slug === "orchestrator-agent")?.slug ??
+      snapshot.personas[0]?.slug ??
+      "";
+    let cancelled = false;
+    invoke<AgentInfo>("agent_info")
+      .then((info) => {
+        if (cancelled) return;
+        const wanted = info.default_persona;
+        onChange(
+          wanted && snapshot.personas.some((p) => p.slug === wanted) ? wanted : fallback,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) onChange(fallback);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.personas, persona, onChange]);
+
+  return (
+    <label className="block">
+      <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+        Persona
+      </span>
+      <select
+        value={persona}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
+      >
+        {snapshot.personas.map((p) => (
+          <option key={p.slug} value={p.slug}>
+            {p.name} ({p.slug})
+          </option>
+        ))}
+      </select>
+      <span className="mt-1 block text-xs text-gray-500">
+        This agent predates agent presets, so a persona is still the entry point.
+      </span>
+    </label>
   );
 }
 
