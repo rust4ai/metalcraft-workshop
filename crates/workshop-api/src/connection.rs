@@ -759,7 +759,12 @@ impl RemoteConnection {
             PackSource::Url(url) => self
                 .post(&format!("{path}?url={}", urlencode(url)))
                 .timeout(UPLOAD_TIMEOUT),
-            PackSource::Path(p) => self.post(&format!("{path}?path={}", urlencode(p))),
+            PackSource::Path(p) => self
+                .post(&format!("{path}?path={}", urlencode(p)))
+                // Reading and unpacking a large archive on the pod takes as long as
+                // uploading one; the JSON-tuned default aborted at 30s while the pod
+                // was still working.
+                .timeout(UPLOAD_TIMEOUT),
             PackSource::Bytes(bytes) => self
                 .post(path)
                 .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -769,10 +774,14 @@ impl RemoteConnection {
     }
 }
 
-/// Percent-encode a query-parameter value. Small on purpose: the alternative is a
-/// URL crate for two call sites, and a pack URL containing `&` would otherwise be
-/// silently truncated into a different URL than the one the user approved.
-fn urlencode(s: &str) -> String {
+/// Percent-encode one path segment or query value.
+///
+/// Small on purpose: the alternative is a URL crate. It matters in two ways — a pack
+/// URL containing `&` would be truncated into a *different* URL than the one the user
+/// approved, and an id containing `/`, `?` or `#` addresses a different endpoint than
+/// the caller meant. Agent-pack ids come from an author-controlled manifest, so that
+/// second case is reachable from a downloaded pack.
+pub fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
@@ -1277,7 +1286,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn get_agent_preset(&self, slug: &str) -> anyhow::Result<AgentPresetDetail> {
         let resp = ok_or_err(
-            self.get(&format!("/api/v1/agent-presets/{slug}")).send().await?,
+            self.get(&format!("/api/v1/agent-presets/{}", urlencode(slug))).send().await?,
             "GET agent-preset",
         )
         .await?;
@@ -1286,7 +1295,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn save_agent_preset(&self, slug: &str, preset: &AgentPreset) -> anyhow::Result<()> {
         ok_or_err(
-            self.put(&format!("/api/v1/agent-presets/{slug}"))
+            self.put(&format!("/api/v1/agent-presets/{}", urlencode(slug)))
                 .json(preset)
                 .send()
                 .await?,
@@ -1298,7 +1307,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn delete_agent_preset(&self, slug: &str) -> anyhow::Result<()> {
         ok_or_err(
-            self.delete(&format!("/api/v1/agent-presets/{slug}")).send().await?,
+            self.delete(&format!("/api/v1/agent-presets/{}", urlencode(slug))).send().await?,
             "DELETE agent-preset",
         )
         .await?;
@@ -1322,7 +1331,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn get_agent_instance(&self, id: &str) -> anyhow::Result<InstanceDetail> {
         let resp = ok_or_err(
-            self.get(&format!("/api/v1/agents/instances/{id}")).send().await?,
+            self.get(&format!("/api/v1/agents/instances/{}", urlencode(id))).send().await?,
             "GET agent instance",
         )
         .await?;
@@ -1358,7 +1367,7 @@ impl ProjectConnection for RemoteConnection {
         patch: &InstancePatch,
     ) -> anyhow::Result<AgentInstance> {
         let resp = ok_or_err(
-            self.patch(&format!("/api/v1/agents/instances/{id}"))
+            self.patch(&format!("/api/v1/agents/instances/{}", urlencode(id)))
                 .json(patch)
                 .send()
                 .await?,
@@ -1375,7 +1384,7 @@ impl ProjectConnection for RemoteConnection {
             conversations_kept: usize,
         }
         let resp = ok_or_err(
-            self.delete(&format!("/api/v1/agents/instances/{id}")).send().await?,
+            self.delete(&format!("/api/v1/agents/instances/{}", urlencode(id))).send().await?,
             "DELETE agent instance",
         )
         .await?;
@@ -1389,8 +1398,8 @@ impl ProjectConnection for RemoteConnection {
         limit: Option<usize>,
     ) -> anyhow::Result<InstanceMemory> {
         let path = match limit {
-            Some(n) => format!("/api/v1/agents/instances/{id}/memory?limit={n}"),
-            None => format!("/api/v1/agents/instances/{id}/memory"),
+            Some(n) => format!("/api/v1/agents/instances/{}/memory?limit={n}", urlencode(id)),
+            None => format!("/api/v1/agents/instances/{}/memory", urlencode(id)),
         };
         let resp = ok_or_err(self.get(&path).send().await?, "GET agent memory").await?;
         decode_json(resp, "GET agent memory").await
@@ -1414,7 +1423,7 @@ impl ProjectConnection for RemoteConnection {
 
     async fn get_agent_pack(&self, id: &str) -> anyhow::Result<InstalledAgentPack> {
         let resp = ok_or_err(
-            self.get(&format!("/api/v1/agent-packs/{id}")).send().await?,
+            self.get(&format!("/api/v1/agent-packs/{}", urlencode(id))).send().await?,
             "GET agent-pack",
         )
         .await?;
@@ -1459,7 +1468,7 @@ impl ProjectConnection for RemoteConnection {
         id: &str,
         force: bool,
     ) -> anyhow::Result<UninstallReport> {
-        let path = format!("/api/v1/agent-packs/{id}?force={force}");
+        let path = format!("/api/v1/agent-packs/{}?force={force}", urlencode(id));
         let resp = ok_or_err(self.delete(&path).send().await?, "DELETE agent-pack").await?;
         decode_json(resp, "DELETE agent-pack").await
     }

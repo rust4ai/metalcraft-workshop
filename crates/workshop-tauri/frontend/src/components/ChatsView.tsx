@@ -106,6 +106,10 @@ function NewChatPanel({
     if (!preset) return;
     let cancelled = false;
     setRoster(null);
+    // An agent belongs to one preset. Keeping the selection across a change started
+    // the chat against an agent of a *different* agent — and when the new preset had
+    // no agents the picker unmounted, so the stale id was invisible as well as wrong.
+    setInstanceId("");
     invoke<{ preset: unknown; personas: RosterPersona[] }>("get_agent_preset", {
       slug: preset,
     })
@@ -331,6 +335,10 @@ function LegacyPersonaPicker({
 }
 
 // ── Turn-grouped transcript ─────────────────────────────────────────────────
+
+/// A tool call read back from the transcript rather than watched live. Nothing can
+/// time it, so the UI must not try.
+const HISTORICAL = Number.NaN;
 
 /// An item within a turn. Either an LLM-produced batch of messages or a
 /// tool call (which may still be in-flight).
@@ -850,7 +858,14 @@ function ToolCard({
           {pending ? "🔧" : "✓"} {event.name}
         </span>
         {pending ? (
-          <LiveTimer startedAt={event.startedAt} />
+          // A tool call read back from the transcript has no start time, so there is
+          // nothing to count. An interrupted turn — `tool_started` persisted with no
+          // result — used to render a timer from the Unix epoch, pulsing forever.
+          Number.isNaN(event.startedAt) ? (
+            <span className="text-gray-500 font-mono">unfinished</span>
+          ) : (
+            <LiveTimer startedAt={event.startedAt} />
+          )
         ) : (
           event.durationMs !== undefined && (
             <span className="text-gray-500 font-mono">
@@ -1020,7 +1035,11 @@ function groupHistoricalMessages(messages: ChatWireMessage[]): Turn[] {
         toolCallId: m.id,
         name: m.name,
         args: m.args,
-        startedAt: 0,
+        // A historical tool call has no start time — it was persisted, not observed. `0`
+              // is the Unix epoch, and an interrupted turn (a `tool_started` persisted
+              // with no result) then rendered a live timer reading ~29,500,000m and
+              // pulsing forever.
+              startedAt: HISTORICAL,
       };
       turns[turns.length - 1].events.push(ev);
       callIdToToolEvent.set(m.id, ev);

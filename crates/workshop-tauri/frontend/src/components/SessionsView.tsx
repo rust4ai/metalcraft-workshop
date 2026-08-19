@@ -14,13 +14,18 @@ export default function SessionsView({ snapshot, selectedId }: Props) {
   const reportError = useReportError();
 
   useEffect(() => {
-    if (!selectedId) {
-      setTimeline(null);
-      return;
-    }
+    // Blank first, and ignore a slower earlier response. Without this, selecting a
+    // session while another is loading — or selecting one that fails — left the
+    // previous session's whole transcript on screen under the new session's header.
+    setTimeline(null);
+    if (!selectedId) return;
+    let cancelled = false;
     invoke<ChatTimeline>("load_diagnostics_session", { id: selectedId })
-      .then(setTimeline)
-      .catch((e) => reportError("load_diagnostics_session", e));
+      .then((t) => !cancelled && setTimeline(t))
+      .catch((e) => !cancelled && reportError("load_diagnostics_session", e));
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId, reportError]);
 
   if (!selectedId) {

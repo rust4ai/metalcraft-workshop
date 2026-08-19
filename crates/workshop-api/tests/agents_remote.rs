@@ -220,9 +220,6 @@ async fn an_agent_pack_can_be_inspected_before_it_is_installed() {
     assert!(!registries.is_empty(), "a pod that can install must say from where");
 
     // ── inspect grants nothing ──────────────────────────────────────────────
-    let before: Vec<String> =
-        conn.list_agent_packs().await.expect("list").into_iter().map(|p| p.id).collect();
-
     let preview = conn
         .inspect_agent_pack(&PackSource::Url(url.clone()))
         .await
@@ -237,9 +234,20 @@ async fn an_agent_pack_can_be_inspected_before_it_is_installed() {
     );
     assert!(!preview.consent.tools.is_empty());
 
-    let after: Vec<String> =
-        conn.list_agent_packs().await.expect("list").into_iter().map(|p| p.id).collect();
-    assert_eq!(before, after, "inspecting must not install");
+    // Scoped to *this* pack rather than the whole list: these tests share one pod and
+    // run concurrently, so comparing the full list makes the assertion depend on what
+    // another test happens to be doing.
+    let installed_now = conn
+        .list_agent_packs()
+        .await
+        .expect("list")
+        .iter()
+        .any(|p| p.id == preview.manifest.id);
+    assert!(
+        !installed_now || preview.installed_version.is_some(),
+        "inspecting must not install: '{}' appeared without having been there before",
+        preview.manifest.id
+    );
 
     // ── an origin the pod does not trust is refused ─────────────────────────
     let err = conn
@@ -311,4 +319,23 @@ async fn a_preset_round_trips_through_export_and_install() {
         preview.preset_collisions.contains(&"general-agent".to_string()),
         "the seeded preset already owns this slug, and the dialog should say so"
     );
+}
+
+/// An id that would otherwise change which endpoint is addressed.
+///
+/// Ids reach these paths from author-controlled places — an agent pack's own
+/// manifest, a preset slug in a downloaded archive — and were interpolated raw. A
+/// `/` or `?` in one silently redirected the request to a different route.
+#[test]
+fn ids_are_encoded_into_paths() {
+    use workshop_api::connection::urlencode;
+    assert_eq!(urlencode("a/b"), "a%2Fb");
+    assert_eq!(urlencode("a?b"), "a%3Fb");
+    assert_eq!(urlencode("a#b"), "a%23b");
+    assert_eq!(urlencode("../admin"), "..%2Fadmin");
+    // Ordinary ids are untouched, so nothing that worked stops working.
+    assert_eq!(urlencode("inst_1a2b"), "inst_1a2b");
+    assert_eq!(urlencode("amy-kitchen.v2"), "amy-kitchen.v2");
+    // Byte-wise, so multi-byte input is escaped rather than mangled.
+    assert_eq!(urlencode("é"), "%C3%A9");
 }

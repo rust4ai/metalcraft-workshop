@@ -43,13 +43,18 @@ export default function AgentsView({
   const [instances, setInstances] = useState<AgentInstance[]>([]);
   const [showEphemeral, setShowEphemeral] = useState(false);
 
+  const [loadFailed, setLoadFailed] = useState(false);
   const refresh = useCallback(async () => {
     try {
       setInstances(await invoke<AgentInstance[]>("list_agent_instances"));
+      setLoadFailed(false);
     } catch {
-      // A local directory with no agent_instances/ has none — not an error worth
-      // a toast every time the tab is opened.
+      // A local directory with no `agent_instances/` genuinely has none, so this is
+      // not worth a toast every time the tab is opened. But swallowing it outright
+      // rendered "No named agents yet" on a pod that has dozens and simply failed to
+      // answer — so the empty state says which it is.
       setInstances([]);
+      setLoadFailed(true);
     }
   }, []);
 
@@ -105,7 +110,9 @@ export default function AgentsView({
 
         {visible.length === 0 ? (
           <p className="text-xs text-gray-500">
-            No named agents yet. Starting a chat creates one; naming it keeps it.
+            {loadFailed
+              ? "Could not read this pod's agents — switch tabs to try again."
+              : "No named agents yet. Starting a chat creates one; naming it keeps it."}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -324,6 +331,10 @@ function AgentDetail({
   reportError: (ctx: string, e: unknown) => void;
 }) {
   const [detail, setDetail] = useState<InstanceDetail | null>(null);
+  /// True when the agent's detail could not be read. Distinct from "it has none":
+  /// the delete dialog says what survives, and an unread list rendering as zero told
+  /// the user their transcripts would be lost when they would not have been.
+  const [detailFailed, setDetailFailed] = useState(false);
   const [memory, setMemory] = useState<InstanceMemory | null>(null);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [name, setName] = useState(instance.name);
@@ -332,9 +343,13 @@ function AgentDetail({
 
   useEffect(() => {
     setName(instance.name);
+    setDetailFailed(false);
     invoke<InstanceDetail>("get_agent_instance", { id: instance.id })
       .then(setDetail)
-      .catch(() => setDetail(null));
+      .catch(() => {
+        setDetail(null);
+        setDetailFailed(true);
+      });
     // Local mode has no recall index, so this is expected to fail there. Say why
     // rather than showing a permanently empty panel.
     invoke<InstanceMemory>("agent_instance_memory", { id: instance.id, limit: 8 })
@@ -502,11 +517,11 @@ function AgentDetail({
             {/* Say what survives. Deleting an agent deliberately keeps its
                 transcripts, and making the user guess about that is unkind. */}
             <p className="text-xs text-gray-300">
-              Delete “{instance.name}”? Its{" "}
-              {conversations.length === 0
-                ? "memory is lost"
-                : `${conversations.length} conversation${conversations.length === 1 ? "" : "s"} are kept; its memory is lost`}
-              .
+              {detailFailed
+                ? `Delete “${instance.name}”? Its conversations are kept — they always are — but this agent’s list could not be loaded, so I cannot say how many. Its memory is lost.`
+                : conversations.length === 0
+                  ? `Delete “${instance.name}”? Its memory is lost.`
+                  : `Delete “${instance.name}”? Its ${conversations.length} conversation${conversations.length === 1 ? "" : "s"} are kept; its memory is lost.`}
             </p>
             <div className="flex gap-2">
               <button

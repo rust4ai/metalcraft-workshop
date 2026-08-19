@@ -797,7 +797,19 @@ async fn install_agent_pack(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<InstallReport, String> {
     let conn = require_connection(&state)?;
-    conn.install_agent_pack(&source.into_source()?).await.map_err(|e| e.to_string())
+    let report = conn
+        .install_agent_pack(&source.into_source()?)
+        .await
+        .map_err(|e| e.to_string())?;
+    // A pack brings presets, personas and skills, all of which the sidebar and the
+    // chat picker read from the snapshot. Without this the agent you just installed
+    // is invisible until you disconnect and reconnect — the pack list says it worked
+    // and nothing else changes.
+    // `SaveOk` is what the frontend listens for to re-pull the snapshot; the kind is
+    // only a label. A pack brings presets, personas and skills at once, so `Persona`
+    // is the closest existing one.
+    state.emit(WorkshopEvent::SaveOk { kind: FileKind::Persona, id: report.id.clone() });
+    Ok(report)
 }
 
 /// `force` orphans any saved agents made from this pack rather than refusing.
@@ -808,9 +820,15 @@ async fn uninstall_agent_pack(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<UninstallReport, String> {
     let conn = require_connection(&state)?;
-    conn.uninstall_agent_pack(&id, force.unwrap_or(false))
+    let report = conn
+        .uninstall_agent_pack(&id, force.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // `SaveOk` is what the frontend listens for to re-pull the snapshot; the kind is
+    // only a label. A pack brings presets, personas and skills at once, so `Persona`
+    // is the closest existing one.
+    state.emit(WorkshopEvent::SaveOk { kind: FileKind::Persona, id: report.id.clone() });
+    Ok(report)
 }
 
 /// Package one of this pod's presets and write it where the user chose.

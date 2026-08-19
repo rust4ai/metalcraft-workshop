@@ -425,18 +425,27 @@ function InstallAgentPack({
 }) {
   const reportError = useReportError();
   const [url, setUrl] = useState("");
-  const [preview, setPreview] = useState<AgentPackPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<InstallReport | null>(null);
+  /// The reviewed pack **and the exact source it was reviewed from**, together.
+  ///
+  /// These were two pieces of state, and a cancelled or failed review left the file
+  /// path behind — so reviewing a URL afterwards showed that pack's consent summary
+  /// while Install still uploaded the stale file. Consent for one archive, install of
+  /// another. Holding them as one value makes that unrepresentable.
+  const [reviewed, setReviewed] = useState<
+    { preview: AgentPackPreview; source: PackSource } | null
+  >(null);
 
   const inspect = async (source: PackSource) => {
     setBusy(true);
     setReport(null);
+    setReviewed(null);
     try {
-      setPreview(await invoke<AgentPackPreview>("inspect_agent_pack", { source }));
+      const preview = await invoke<AgentPackPreview>("inspect_agent_pack", { source });
+      setReviewed({ preview, source });
     } catch (e) {
       reportError("inspect_agent_pack", e);
-      setPreview(null);
     } finally {
       setBusy(false);
     }
@@ -444,29 +453,25 @@ function InstallAgentPack({
 
   /// Pick an `.agentpack` from this machine. The Rust side reads it and uploads the
   /// bytes — the pod may be elsewhere and cannot open a path we hand it.
-  const [localPath, setLocalPath] = useState("");
   const pickFile = async () => {
     const picked = await openDialog({
       multiple: false,
       filters: [{ name: "Agent pack", extensions: ["agentpack", "zip"] }],
     });
     if (!picked || Array.isArray(picked)) return;
-    setLocalPath(picked);
     await inspect({ kind: "local_file", path: picked });
   };
 
   const install = async () => {
-    if (!preview) return;
+    if (!reviewed) return;
     setBusy(true);
     try {
-      // Install the *same source* that was inspected, so what lands is what was
-      // approved.
-      const source: PackSource = localPath
-        ? { kind: "local_file", path: localPath }
-        : { kind: "url", url: url.trim() };
-      setReport(await invoke<InstallReport>("install_agent_pack", { source }));
-      setPreview(null);
-      setLocalPath("");
+      // The source carried by the review, so what lands is what was approved.
+      setReport(
+        await invoke<InstallReport>("install_agent_pack", { source: reviewed.source }),
+      );
+      setReviewed(null);
+      setUrl("");
       onInstalled();
     } catch (e) {
       reportError("install_agent_pack", e);
@@ -502,13 +507,13 @@ function InstallAgentPack({
     );
   }
 
-  if (preview) {
+  if (reviewed) {
     return (
       <ConsentDialog
-        preview={preview}
+        preview={reviewed.preview}
         busy={busy}
         onInstall={install}
-        onCancel={() => setPreview(null)}
+        onCancel={() => setReviewed(null)}
       />
     );
   }
@@ -568,6 +573,10 @@ function ConsentDialog({
   const c = preview.consent;
   const mutating = (c.mutating_tools ?? []).length;
   const total = (c.tools ?? []).length;
+  // No tools listed at all is "we could not derive this", not "it is harmless". Every
+  // consent field defaults to empty on the wire, so an older pod — or a derivation
+  // that failed — would otherwise render as an affirmative safety claim.
+  const unknown = total === 0;
 
   return (
     <div className="bg-surface-1 border border-accent/40 rounded p-4 space-y-3">
@@ -588,10 +597,12 @@ function ConsentDialog({
         <p className="text-xs text-gray-400 mt-1">{preview.manifest.description}</p>
       </div>
 
-      <p className="text-xs text-gray-300">
-        {mutating === 0
-          ? `This agent only reads. None of its ${total} tools can change anything.`
-          : `This agent can change things: ${mutating} of its ${total} tools write.`}
+      <p className={`text-xs ${unknown ? "text-amber-400" : "text-gray-300"}`}>
+        {unknown
+          ? "This pack declares no tools, so there is nothing to summarise — check the source you got it from."
+          : mutating === 0
+            ? `This agent only reads. None of its ${total} tools can change anything.`
+            : `This agent can change things: ${mutating} of its ${total} tools write.`}
       </p>
 
       {(c.domains ?? []).length > 0 && (

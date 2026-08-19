@@ -43,10 +43,24 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
       setSlugDraft("");
       return;
     }
+    // Blank first. Without this the previous persona's body stayed on screen while
+    // the next one loaded — and `save` writes `persona` under `selectedSlug`, so
+    // pressing Save in that window wrote A's prompt and tools into B.json. A failed
+    // load left the same state indefinitely.
+    setPersona(null);
     setSlugDraft(selectedSlug);
+    let cancelled = false;
     invoke<Persona>("get_persona", { slug: selectedSlug })
-      .then(setPersona)
-      .catch((e) => reportError("get_persona", e));
+      .then((p) => {
+        // A slower earlier request must not land on top of a newer selection.
+        if (!cancelled) setPersona(p);
+      })
+      .catch((e) => {
+        if (!cancelled) reportError("get_persona", e);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedSlug, isNew, reportError]);
 
   if (!selectedSlug) {
@@ -190,7 +204,7 @@ function UsedByAgents({
   snapshot: ProjectSnapshot;
   slug: string;
 }) {
-  const [users, setUsers] = useState<string[] | null>(null);
+  const [users, setUsers] = useState<UserRef[] | null>(null);
 
   useEffect(() => {
     const presets = snapshot.agent_presets ?? [];
@@ -203,11 +217,19 @@ function UsedByAgents({
     Promise.all(
       presets.map((p) =>
         invoke<AgentPresetDetail>("get_agent_preset", { slug: p.slug })
-          .then((d) => (d.personas.some((rp) => rp.slug === slug) ? p.name : null))
-          .catch(() => null),
+          .then((d) =>
+            d.personas.some((rp) => rp.slug === slug)
+              ? { name: p.name, known: true }
+              : null,
+          )
+          // A preset we could not read might well use this persona. Counting it as a
+          // "no" would tell someone nothing references it, which is the one answer
+          // that makes deleting look safe.
+          .catch(() => ({ name: p.name, known: false })),
       ),
-    ).then((names) => {
-      if (!cancelled) setUsers(names.filter((n): n is string => !!n));
+    ).then((results) => {
+      if (cancelled) return;
+      setUsers(results.filter((r): r is UserRef => !!r));
     });
     return () => {
       cancelled = true;
@@ -216,13 +238,37 @@ function UsedByAgents({
 
   if (users === null || users.length === 0) return null;
 
+  const confirmed = users.filter((u) => u.known);
+  const unchecked = users.filter((u) => !u.known);
+
   return (
     <p className="px-3 py-2 bg-surface-1 border border-surface-3 rounded text-xs text-gray-400">
-      Used by {users.length} agent{users.length === 1 ? "" : "s"}:{" "}
-      <span className="text-gray-300">{users.join(", ")}</span>. Deleting this persona
-      leaves {users.length === 1 ? "it" : "them"} naming something that is not there.
+      {confirmed.length > 0 && (
+        <>
+          Used by {confirmed.length} agent{confirmed.length === 1 ? "" : "s"}:{" "}
+          <span className="text-gray-300">
+            {confirmed.map((u) => u.name).join(", ")}
+          </span>
+          . Deleting this persona leaves {confirmed.length === 1 ? "it" : "them"}{" "}
+          naming something that is not there.{" "}
+        </>
+      )}
+      {unchecked.length > 0 && (
+        <span className="text-amber-400">
+          {unchecked.length} agent{unchecked.length === 1 ? "" : "s"} could not be
+          checked ({unchecked.map((u) => u.name).join(", ")}), so this may be used
+          elsewhere.
+        </span>
+      )}
     </p>
   );
+}
+
+/// A preset that references this persona — or one we could not read, which is not the
+/// same as one that does not.
+interface UserRef {
+  name: string;
+  known: boolean;
 }
 
 function Empty({ label }: { label: string }) {
