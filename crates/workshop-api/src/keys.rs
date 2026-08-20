@@ -35,7 +35,7 @@ pub struct KeyEntry {
     pub managed: bool,
 }
 
-/// A key that an enabled integration pack declares it needs (via the pack's
+/// A key that an enabled integration declares it needs (via the pack's
 /// `requires_env`), annotated with whether it's already configured and which
 /// packs want it. Sourced from the agent's `GET /api/v1/keys/recommended` —
 /// local mode has no packs, so the list is empty.

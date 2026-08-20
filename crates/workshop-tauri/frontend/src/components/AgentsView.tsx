@@ -629,13 +629,13 @@ function PresetDetailPane({ slug, onBack }: { slug: string; onBack: () => void }
         </ul>
       </section>
 
-      {(detail.preset.integration_packs ?? []).length > 0 && (
+      {(detail.preset.integrations ?? []).length > 0 && (
         <section>
           <h3 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
-            Integration packs
+            Integrations
           </h3>
           <p className="text-xs text-gray-400">
-            {(detail.preset.integration_packs ?? []).join(", ")}
+            {(detail.preset.integrations ?? []).join(", ")}
           </p>
         </section>
       )}

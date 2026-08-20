@@ -1,7 +1,7 @@
-//! Integration pack wire types — mirror the agent's `IntegrationPackSummary`
-//! and `IntegrationPackDetail`. Remote-only; LocalConnection returns
+//! Integration wire types — mirror the agent's `IntegrationSummary`
+//! and `IntegrationDetail`. Remote-only; LocalConnection returns
 //! `NotSupportedInLocalMode` because pack state lives in the agent's
-//! process-managed `<data>/integration_packs.json`.
+//! process-managed `<data>/integrations.json`.
 
 use serde::{Deserialize, Serialize};
 

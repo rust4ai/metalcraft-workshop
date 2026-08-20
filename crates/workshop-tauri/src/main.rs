@@ -22,7 +22,7 @@ use workshop_api::{
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     gateway::{Channel, GatewayEvent},
-    integration_packs::{PackDetail, PackSummary},
+    integrations::{PackDetail, PackSummary},
     keys::{KeyEntry, RecommendedKey},
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
@@ -1059,23 +1059,23 @@ async fn cancel_scheduled_task(
     conn.cancel_scheduled_task(&id).await.map_err(|e| e.to_string())
 }
 
-// ---- Integration packs ----
+// ---- Integrations ----
 
 #[tauri::command]
-async fn list_integration_packs(
+async fn list_integrations(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<PackSummary>, String> {
     let conn = require_connection(&state)?;
-    conn.list_integration_packs().await.map_err(|e| e.to_string())
+    conn.list_integrations().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn get_integration_pack(
+async fn get_integration(
     id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<PackDetail, String> {
     let conn = require_connection(&state)?;
-    conn.get_integration_pack(&id).await.map_err(|e| e.to_string())
+    conn.get_integration(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1909,8 +1909,8 @@ fn main() {
             stop_chat_events,
             list_scheduled_tasks,
             cancel_scheduled_task,
-            list_integration_packs,
-            get_integration_pack,
+            list_integrations,
+            get_integration,
             set_pack_enabled,
             install_pack,
             uninstall_pack,

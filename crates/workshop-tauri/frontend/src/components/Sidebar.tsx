@@ -75,7 +75,7 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
                     {it.packId && (
                       <span
                         className="px-1 py-px text-[9px] uppercase tracking-wide bg-accent/20 text-accent-light rounded font-mono"
-                        title={`from '${it.packId}' integration pack — read-only`}
+                        title={`from '${it.packId}' integration — read-only`}
                       >
                         {it.packId}
                       </span>
@@ -181,7 +181,7 @@ interface SidebarItem {
   id: string;
   label: string;
   sub?: string;
-  /// If set, the item is provided by an enabled integration pack and renders
+  /// If set, the item is provided by an enabled integration and renders
   /// with a small "pack" chip + slightly dimmed text.
   packId?: string | null;
 }
@@ -310,7 +310,7 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
     case "packs":
       return snap.mode === "remote"
         ? "Packs panel loads its own list."
-        : "Integration packs require a remote connection.";
+        : "Integrations require a remote connection.";
     case "gateway":
       return snap.mode === "remote"
         ? "Click + New Channel to configure a gateway channel."

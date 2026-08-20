@@ -1,7 +1,7 @@
 //! Gateway wire types — the channels connection model + the activity feed,
 //! mirroring the agent. Remote-only: LocalConnection returns
 //! `NotSupportedInLocalMode` because gateway state is managed by the agent
-//! process, the same as integration packs.
+//! process, the same as integrations.
 
 use serde::{Deserialize, Serialize};
 

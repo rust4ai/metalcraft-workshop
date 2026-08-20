@@ -23,7 +23,7 @@ use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
 use crate::gateway::{Channel, GatewayEvent};
-use crate::integration_packs::{PackDetail, PackSummary};
+use crate::integrations::{PackDetail, PackSummary};
 use crate::keys::{self, KeyEntry, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
@@ -124,7 +124,7 @@ pub trait ProjectConnection: Send + Sync {
     /// Reveal a key's raw value. `channel_id` targets a channel's secret scope.
     async fn reveal_key(&self, name: &str, channel_id: Option<&str>) -> anyhow::Result<String>;
 
-    /// Keys that enabled integration packs declare they need. Remote-only —
+    /// Keys that enabled integrations declare they need. Remote-only —
     /// pack state lives on the agent, so local mode returns an empty list.
     async fn list_recommended_keys(&self) -> anyhow::Result<Vec<RecommendedKey>>;
 
@@ -278,10 +278,10 @@ pub trait ProjectConnection: Send + Sync {
     /// Cancel a pending scheduled follow-up.
     async fn cancel_scheduled_task(&self, id: &str) -> anyhow::Result<()>;
 
-    // Integration packs — remote-only. Pack state is managed by the agent
-    // process (lives in `<data>/integration_packs.json`), not the workshop.
-    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>>;
-    async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail>;
+    // Integrations — remote-only. Pack state is managed by the agent
+    // process (lives in `<data>/integrations.json`), not the workshop.
+    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>>;
+    async fn get_integration(&self, id: &str) -> anyhow::Result<PackDetail>;
     async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
     /// Install a pack from the registry, optionally pinning a version and/or a
     /// content hash. Returns the installed [`PackSummary`] (enabled + pinned).
@@ -615,14 +615,14 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Scheduled tasks"))
     }
 
-    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {
-        Err(chat::not_supported_in_local_mode("Integration packs"))
+    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>> {
+        Err(chat::not_supported_in_local_mode("Integrations"))
     }
-    async fn get_integration_pack(&self, _id: &str) -> anyhow::Result<PackDetail> {
-        Err(chat::not_supported_in_local_mode("Integration packs"))
+    async fn get_integration(&self, _id: &str) -> anyhow::Result<PackDetail> {
+        Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn set_pack_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
-        Err(chat::not_supported_in_local_mode("Integration packs"))
+        Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn install_pack(
         &self,
@@ -630,10 +630,10 @@ impl ProjectConnection for LocalConnection {
         _version: Option<&str>,
         _content_sha256: Option<&str>,
     ) -> anyhow::Result<PackSummary> {
-        Err(chat::not_supported_in_local_mode("Integration packs"))
+        Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn uninstall_pack(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
-        Err(chat::not_supported_in_local_mode("Integration packs"))
+        Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn install_flow(&self, _slug: &str) -> anyhow::Result<serde_json::Value> {
         Err(chat::not_supported_in_local_mode("Install flow"))
@@ -1700,17 +1700,17 @@ impl ProjectConnection for RemoteConnection {
         Ok(())
     }
 
-    async fn list_integration_packs(&self) -> anyhow::Result<Vec<PackSummary>> {
+    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>> {
         let resp = ok_or_err(
-            self.get("/api/v1/integration-packs").send().await?,
-            "GET integration-packs",
+            self.get("/api/v1/integrations").send().await?,
+            "GET integrations",
         )
         .await?;
         Ok(resp.json().await?)
     }
-    async fn get_integration_pack(&self, id: &str) -> anyhow::Result<PackDetail> {
+    async fn get_integration(&self, id: &str) -> anyhow::Result<PackDetail> {
         let resp = ok_or_err(
-            self.get(&format!("/api/v1/integration-packs/{id}")).send().await?,
+            self.get(&format!("/api/v1/integrations/{id}")).send().await?,
             "GET integration-pack",
         )
         .await?;
@@ -1722,7 +1722,7 @@ impl ProjectConnection for RemoteConnection {
             enabled: bool,
         }
         ok_or_err(
-            self.put(&format!("/api/v1/integration-packs/{id}/enabled"))
+            self.put(&format!("/api/v1/integrations/{id}/enabled"))
                 .json(&Body { enabled })
                 .send()
                 .await?,
@@ -1746,7 +1746,7 @@ impl ProjectConnection for RemoteConnection {
             content_sha256: Option<&'a str>,
         }
         let resp = ok_or_err(
-            self.post("/api/v1/integration-packs/install")
+            self.post("/api/v1/integrations/install")
                 .json(&Body { slug, version, content_sha256 })
                 .send()
                 .await?,
@@ -1757,7 +1757,7 @@ impl ProjectConnection for RemoteConnection {
     }
     async fn uninstall_pack(&self, id: &str) -> anyhow::Result<serde_json::Value> {
         let resp = ok_or_err(
-            self.delete(&format!("/api/v1/integration-packs/{id}")).send().await?,
+            self.delete(&format!("/api/v1/integrations/{id}")).send().await?,
             "DELETE integration-pack",
         )
         .await?;

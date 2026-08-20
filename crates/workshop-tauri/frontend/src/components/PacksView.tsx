@@ -42,7 +42,7 @@ export default function PacksView({
       <div className="h-full flex items-center justify-center p-6 text-center">
         <div className="max-w-md text-sm text-gray-400">
           <p className="mb-2">
-            Integration packs are managed by the agent process and are only
+            Integrations are managed by the agent process and are only
             visible when connected to a remote agent.
           </p>
           <p className="text-xs text-gray-500">
@@ -59,10 +59,10 @@ export default function PacksView({
 
   const refresh = async () => {
     try {
-      const list = await invoke<PackSummary[]>("list_integration_packs");
+      const list = await invoke<PackSummary[]>("list_integrations");
       setPacks(list);
     } catch (e) {
-      reportError("list_integration_packs", e);
+      reportError("list_integrations", e);
     }
   };
 
@@ -101,7 +101,7 @@ export default function PacksView({
           onDeepLinkConsumed={onDeepLinkConsumed}
         />
 
-        <h2 className="text-sm font-semibold text-accent pt-4">Integration packs</h2>
+        <h2 className="text-sm font-semibold text-accent pt-4">Integrations</h2>
         <p className="text-xs text-gray-500">
           The HTTP-API tools behind each service. These are not installed on their
           own — an agent pack vendors the ones its personas need, so this list is a
@@ -269,9 +269,9 @@ function PackDetailPanel({
   const [detail, setDetail] = useState<PackDetail | null>(null);
 
   useEffect(() => {
-    invoke<PackDetail>("get_integration_pack", { id: packId })
+    invoke<PackDetail>("get_integration", { id: packId })
       .then(setDetail)
-      .catch((e) => reportError("get_integration_pack", e));
+      .catch((e) => reportError("get_integration", e));
   }, [packId, reportError]);
 
   if (!detail) return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
@@ -339,7 +339,7 @@ function Section({ title, items }: { title: string; items: string[] }) {
 /**
  * Agent packs — the install unit.
  *
- * A pack carries one agent preset plus every persona, skill and integration pack it
+ * A pack carries one agent preset plus every persona, skill and integration it
  * needs, so installing one is the moment a person grants an agent reach into their
  * accounts. The dialog below therefore *inspects first*: the pod validates the
  * archive, derives what it would reach from the archive's own tool definitions, and
@@ -383,7 +383,7 @@ function AgentPacks({
       <h2 className="text-sm font-semibold text-accent">Agent packs</h2>
       <p className="text-xs text-gray-500">
         An agent, packaged: one preset, its personas and skills, and every
-        integration pack they need. Installing one adds an agent you can start a chat
+        integration they need. Installing one adds an agent you can start a chat
         with.
       </p>
 

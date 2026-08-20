@@ -10,7 +10,7 @@ pub struct Persona {
     pub name: String,
     pub description: String,
     pub tools: Vec<String>,
-    /// Integration packs the persona is scoped to. The workshop doesn't edit
+    /// Integrations the persona is scoped to. The workshop doesn't edit
     /// this, but it must round-trip it — dropping it on save would strip a
     /// persona's pack-provided tools. Mirrors `metalcraft-agent`.
     #[serde(default)]

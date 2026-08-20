@@ -13,7 +13,7 @@ const BLANK: Persona = {
   name: "",
   description: "",
   tools: [],
-  packs: [],
+  integrations: [],
   skills: [],
   system_prompt: "",
 };
@@ -158,7 +158,7 @@ export default function PersonasView({ snapshot, selectedSlug, onSelect }: Props
         {isReadOnly && (
           <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
             Read-only — this persona is provided by the{" "}
-            <span className="font-mono">{packId}</span> integration pack.
+            <span className="font-mono">{packId}</span> integration.
             Create a new persona with a different slug to make a variant.
           </div>
         )}

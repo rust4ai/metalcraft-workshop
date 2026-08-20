@@ -590,7 +590,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Install the integration packs an already-installed flow declares in its
+         * Install the integrations an already-installed flow declares in its
          *     `requires` block: for each, resolve its semver range against the registry,
          *     download that exact version, verify the content hash, install, and enable it.
          *     Returns one outcome per pack. Idempotent — packs already satisfied are left
@@ -793,14 +793,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/integration-packs": {
+    "/api/v1/integrations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["list_integration_packs"];
+        get: operations["list_integrations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -809,7 +809,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/integration-packs/install": {
+    "/api/v1/integrations/install": {
         parameters: {
             query?: never;
             header?: never;
@@ -823,30 +823,30 @@ export interface paths {
          *     packs.metalcraftai.com, extract it into the data dir, and enable it. Returns
          *     the new pack's summary (same shape as the list endpoint).
          */
-        post: operations["post_install_pack"];
+        post: operations["post_install_integration"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/integration-packs/{id}": {
+    "/api/v1/integrations/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_integration_pack"];
+        get: operations["get_integration"];
         put?: never;
         post?: never;
-        delete: operations["delete_integration_pack"];
+        delete: operations["delete_integration"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/integration-packs/{id}/enabled": {
+    "/api/v1/integrations/{id}/enabled": {
         parameters: {
             query?: never;
             header?: never;
@@ -855,14 +855,14 @@ export interface paths {
         };
         get?: never;
         /**
-         * Retired. An integration pack is no longer independently enabled or disabled —
+         * Retired. An integration is no longer independently enabled or disabled —
          *     an agent pack is the install unit, and the packs it vendors are simply present
          *     (see `docs/AGENT_PACKS_PLAN.md`).
          * @description This answers 410 rather than quietly succeeding: a toggle that returns 204 and
          *     changes nothing is worse than one that says it is gone, because the UI would go
          *     on showing a state the runtime does not honour.
          */
-        put: operations["put_pack_enabled"];
+        put: operations["put_integration_enabled"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1199,7 +1199,11 @@ export interface components {
             avatar?: string | null;
             default_persona: string;
             description?: string;
-            integration_packs?: string[];
+            /**
+             * @description Reads `integration_packs` too — the pre-0.30 name, still present in every
+             *     preset authored before the rename.
+             */
+            integrations?: string[];
             /** Format: int32 */
             manifest_version?: number;
             memories?: null | components["schemas"]["MemoriesRef"];
@@ -1464,7 +1468,7 @@ export interface components {
             /** @description Secret keys the required (installed) packs declare in their `requires_env`. */
             required_env: string[];
             /**
-             * @description Integration packs the flow requires — the union of what the graph
+             * @description Integrations the flow requires — the union of what the graph
              *     references (`sub_agent.pack` + custom vendor nodes) and what the flow's
              *     `requires` block declares.
              */
@@ -1890,7 +1894,7 @@ export interface components {
             /** @enum {string} */
             kind: "flow";
         };
-        IntegrationPackDetail: {
+        IntegrationDetail: {
             api_tools: string[];
             description: string;
             enabled: boolean;
@@ -1902,7 +1906,16 @@ export interface components {
             skills: string[];
             version: string;
         };
-        IntegrationPackSummary: {
+        /** @description A vendored integration, pinned by content. */
+        IntegrationRef: {
+            /** @description Integrity pin for the vendored copy. Verified at install. */
+            content_sha256?: string | null;
+            id: string;
+            /** @description Where the author obtained it, for provenance display. Never fetched from. */
+            source?: string | null;
+            version: string;
+        };
+        IntegrationSummary: {
             api_tools: number;
             description: string;
             enabled: boolean;
@@ -1959,7 +1972,7 @@ export interface components {
         Lock: {
             /**
              * @description Agent packs — the unit of installation. Self-contained, so restoring these
-             *     needs no dependency ordering: each carries its own integration packs.
+             *     needs no dependency ordering: each carries its own integrations.
              */
             agent_packs?: components["schemas"]["LockEntry"][];
             flows?: components["schemas"]["LockEntry"][];
@@ -2063,15 +2076,6 @@ export interface components {
             /** @description The version installed (or already present), when known. */
             version?: string | null;
         };
-        /** @description A vendored integration pack, pinned by content. */
-        PackRef: {
-            /** @description Integrity pin for the vendored copy. Verified at install. */
-            content_sha256?: string | null;
-            id: string;
-            /** @description Where the author obtained it, for provenance display. Never fetched from. */
-            source?: string | null;
-            version: string;
-        };
         Parent: {
             content_sha256?: string | null;
             id: string;
@@ -2099,15 +2103,18 @@ export interface components {
         };
         Persona: {
             description: string;
-            name: string;
             /**
-             * @description Integration packs this persona is scoped to (by pack id, e.g. "linear").
-             *     Every HTTP-API tool provided by an enabled pack listed here is added to
-             *     the persona's tool set, so a persona can adopt a whole integration
-             *     without enumerating each `<pack>_*` tool by name. Combine with `tools`
-             *     for native tools like `load_skill`. See [`Persona::resolved_tool_names`].
+             * @description Integrations this persona is scoped to, by id (e.g. `"linear"`). Every
+             *     HTTP-API tool an installed integration listed here provides is added to
+             *     the persona's tool set, so a persona can adopt a whole integration without
+             *     enumerating each `<id>_*` tool by name. Combine with `tools` for native
+             *     tools like `load_skill`. See [`Persona::resolved_tool_names`].
+             *
+             *     Reads `packs` too: that was the field's name until integrations stopped
+             *     being installable, and personas carrying it are already on people's pods.
              */
-            packs?: string[];
+            integrations?: string[];
+            name: string;
             skills?: string[];
             system_prompt: string;
             tools: string[];
@@ -2138,7 +2145,7 @@ export interface components {
             description: string;
             name: string;
             /**
-             * @description Set when this persona is provided by an enabled integration pack.
+             * @description Set when this persona is provided by an enabled integration.
              *     Local (user-owned) personas omit this.
              */
             pack_id?: string | null;
@@ -2207,12 +2214,13 @@ export interface components {
             skills: components["schemas"]["SkillSummary"][];
         };
         Provides: {
-            integration_packs?: components["schemas"]["PackRef"][];
+            /** @description Reads `integration_packs` too — the pre-0.30 name. */
+            integrations?: components["schemas"]["IntegrationRef"][];
             personas?: string[];
             skills?: string[];
         };
         /**
-         * @description A key recommended by one or more *enabled* integration packs (from their
+         * @description A key recommended by one or more *enabled* integrations (from their
          *     `requires_env`), with whether it currently resolves (key store or env) and
          *     which packs declare it. Drives the "keys these packs still need" list in
          *     the key store UI — `configured: false` is the hint to add it.
@@ -2345,7 +2353,7 @@ export interface components {
         /** @description Summary of a skill for listings (no body). */
         SkillSummary: {
             description: string;
-            /** @description Set when this skill is provided by an enabled integration pack. */
+            /** @description Set when this skill is provided by an enabled integration. */
             pack_id?: string | null;
             /** @description True for pack-provided skills — the workshop disables Save/Delete. */
             read_only?: boolean;
@@ -4133,7 +4141,7 @@ export interface operations {
             };
         };
     };
-    list_integration_packs: {
+    list_integrations: {
         parameters: {
             query?: never;
             header?: never;
@@ -4147,12 +4155,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IntegrationPackSummary"][];
+                    "application/json": components["schemas"]["IntegrationSummary"][];
                 };
             };
         };
     };
-    post_install_pack: {
+    post_install_integration: {
         parameters: {
             query?: never;
             header?: never;
@@ -4170,7 +4178,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IntegrationPackSummary"];
+                    "application/json": components["schemas"]["IntegrationSummary"];
                 };
             };
             400: {
@@ -4191,7 +4199,7 @@ export interface operations {
             };
         };
     };
-    get_integration_pack: {
+    get_integration: {
         parameters: {
             query?: never;
             header?: never;
@@ -4208,7 +4216,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IntegrationPackDetail"];
+                    "application/json": components["schemas"]["IntegrationDetail"];
                 };
             };
             404: {
@@ -4221,7 +4229,7 @@ export interface operations {
             };
         };
     };
-    delete_integration_pack: {
+    delete_integration: {
         parameters: {
             query?: never;
             header?: never;
@@ -4260,7 +4268,7 @@ export interface operations {
             };
         };
     };
-    put_pack_enabled: {
+    put_integration_enabled: {
         parameters: {
             query?: never;
             header?: never;

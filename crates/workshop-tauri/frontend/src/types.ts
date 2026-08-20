@@ -40,7 +40,7 @@ export type ScheduledFlowRef = S["ScheduledFlowRef"];
 
 // ---- Agent packs -----------------------------------------------------------
 //
-// The distribution unit: one preset plus every persona, skill and integration pack
+// The distribution unit: one preset plus every persona, skill and integration
 // it needs. Installing one is where a person grants an agent reach into their
 // accounts, so `AgentPackPreview` exists to make that a decision — it is what the
 // pod would install, described, without installing it.
@@ -241,7 +241,7 @@ export type KeySummary = S["KeySummary"];
 /// a connection/the platform and are read-only in the UI.
 export type KeyEntry = S["KeyEntry"];
 
-/// A key an enabled integration pack declares it needs (`requires_env`), with
+/// A key an enabled integration declares it needs (`requires_env`), with
 /// whether it's already configured, which packs want it, and whether it's
 /// platform-managed. Remote-only.
 export type RecommendedKey = S["RecommendedKey"];
@@ -365,11 +365,11 @@ export interface FlowTemplate {
   flow: SavedFlow;
 }
 
-// ── Integration packs ──────────────────────────────────────────────────────
+// ── Integrations ──────────────────────────────────────────────────────
 
-export type PackSummary = S["IntegrationPackSummary"];
+export type PackSummary = S["IntegrationSummary"];
 
-export type PackDetail = S["IntegrationPackDetail"];
+export type PackDetail = S["IntegrationDetail"];
 
 // ── Gateway ────────────────────────────────────────────────────────────────
 

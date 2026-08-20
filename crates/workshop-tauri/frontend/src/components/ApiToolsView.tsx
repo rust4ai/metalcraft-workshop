@@ -201,7 +201,7 @@ export default function ApiToolsView({ snapshot, selectedName, onSelect }: Props
         {isReadOnly && (
           <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
             Read-only — provided by the{" "}
-            <span className="font-mono">{packId}</span> integration pack.
+            <span className="font-mono">{packId}</span> integration.
           </div>
         )}
         <div className="flex items-center gap-3 pt-4 border-t border-surface-3">

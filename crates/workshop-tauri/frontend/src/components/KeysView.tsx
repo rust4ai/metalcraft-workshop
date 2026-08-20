@@ -349,7 +349,7 @@ function RecommendedKeys({
                 <span
                   key={p}
                   className="px-1 py-px text-[9px] uppercase tracking-wide bg-accent/20 text-accent-light rounded font-mono"
-                  title={`required by the '${p}' integration pack`}
+                  title={`required by the '${p}' integration`}
                 >
                   {p}
                 </span>

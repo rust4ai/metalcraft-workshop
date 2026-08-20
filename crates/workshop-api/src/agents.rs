@@ -1,7 +1,7 @@
 //! Agent presets and agent instances.
 //!
 //! An **agent preset** is what a pod *can be*: a default persona, the roster it may
-//! call, the integration packs those personas need, its skills and seed memories. An
+//! call, the integrations those personas need, its skills and seed memories. An
 //! **agent instance** is an agent that actually exists — one per long-running thing
 //! you talk to, owning its own memory and many conversations.
 //!
@@ -57,7 +57,7 @@ pub struct AgentPreset {
     #[serde(default)]
     pub skills: Vec<String>,
     #[serde(default)]
-    pub integration_packs: Vec<String>,
+    pub integrations: Vec<String>,
     /// Kept as raw JSON: the workshop does not edit memories, but dropping the field
     /// on save would silently strip an agent's seed knowledge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -519,7 +519,7 @@ mod tests {
 
 // ---- Agent packs ----------------------------------------------------------
 //
-// The distribution unit: one preset plus every persona, skill and integration pack
+// The distribution unit: one preset plus every persona, skill and integration
 // it needs, in a signed-by-content `.agentpack` archive. Installing one is the
 // moment a person grants an agent reach into their accounts, so the preview below
 // exists to make that a decision rather than a surprise.
@@ -559,7 +559,7 @@ pub struct PackProvides {
     #[serde(default)]
     pub skills: Vec<String>,
     #[serde(default)]
-    pub integration_packs: Vec<serde_json::Value>,
+    pub integrations: Vec<serde_json::Value>,
 }
 
 /// What installing a pack would grant — **derived from the archive's own bytes**,
@@ -644,7 +644,7 @@ pub struct UninstallReport {
     /// deleted — someone's memories are in there.
     #[serde(default)]
     pub orphaned_agents: Vec<String>,
-    /// Integration packs whose last reference this was, so the content store
+    /// Integrations whose last reference this was, so the content store
     /// released them.
     #[serde(default)]
     pub packs_freed: usize,
