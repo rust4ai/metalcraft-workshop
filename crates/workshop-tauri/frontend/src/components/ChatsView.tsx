@@ -3,13 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useReportError } from "../hooks/useReportError";
 import type {
-  AgentInfo,
   ChatDetail,
   ChatStreamEvent,
   ChatSummary,
   ChatWireMessage,
   ProjectSnapshot,
-  RosterPersona,
   ScheduledTask,
 } from "../types";
 
@@ -80,54 +78,29 @@ function NewChatPanel({
 }) {
   const reportError = useReportError();
 
-  // Starting a chat asks which **agent**, not which persona. The persona is an
-  // implementation detail of the agent; it survives behind Advanced, scoped to the
-  // agent's own roster rather than every persona on the pod.
+  // Starting a chat asks which **agent**, and nothing else. The persona is an
+  // implementation detail of the agent: the pod resolves the preset's default. The
+  // workshop deliberately offers no override — overriding it rewrote the agent's
+  // persona on disk, so a one-off choice silently became that agent's new identity.
   const presets = snapshot.agent_presets ?? [];
   const [preset, setPreset] = useState(
     () => snapshot.default_agent_preset ?? presets[0]?.slug ?? "",
   );
-  const [roster, setRoster] = useState<RosterPersona[] | null>(null);
-  const [persona, setPersona] = useState<string>("");
-  const [advanced, setAdvanced] = useState(false);
   // Continue an existing agent rather than minting one. Only persistent agents are
   // offered — ephemeral ones are per-chat scratch and picking one is never useful.
   const [instanceId, setInstanceId] = useState<string>("");
   const [creating, setCreating] = useState(false);
 
-  // An agent old enough to predate presets sends none. Fall back to the persona
-  // picker rather than showing an empty chooser and refusing to start a chat.
+  // An agent old enough to predate agents sends no presets. There is nothing to
+  // start a chat *as*, and a persona is no longer an entry point — so say that,
+  // rather than leaving a chooser that cannot be satisfied.
   const legacy = presets.length === 0;
 
-  // The chosen agent's roster, which is what Advanced offers. Fetched per selection
-  // because it carries `installed` per persona — the state a pod can report and no
-  // client could previously show.
+  // An agent belongs to one preset. Keeping the selection across a change started the
+  // chat against an agent of a *different* agent — and when the new preset had no
+  // agents the picker unmounted, so the stale id was invisible as well as wrong.
   useEffect(() => {
-    if (!preset) return;
-    let cancelled = false;
-    setRoster(null);
-    // An agent belongs to one preset. Keeping the selection across a change started
-    // the chat against an agent of a *different* agent — and when the new preset had
-    // no agents the picker unmounted, so the stale id was invisible as well as wrong.
     setInstanceId("");
-    invoke<{ preset: unknown; personas: RosterPersona[] }>("get_agent_preset", {
-      slug: preset,
-    })
-      .then((detail) => {
-        if (cancelled) return;
-        setRoster(detail.personas);
-        // Reset an Advanced choice that the new agent cannot reach, rather than
-        // sending a persona the pod will reject.
-        setPersona((current) =>
-          detail.personas.some((p) => p.slug === current && p.installed) ? current : "",
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setRoster([]);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [preset]);
 
   const selectedPreset = presets.find((p) => p.slug === preset);
@@ -139,8 +112,7 @@ function NewChatPanel({
     setCreating(true);
     try {
       const summary = await invoke<ChatSummary>("create_chat", {
-        agentPreset: legacy ? undefined : preset || undefined,
-        personaSlug: advanced && persona ? persona : undefined,
+        agentPreset: preset || undefined,
         instanceId: instanceId || undefined,
       });
       onCreated(summary.id);
@@ -157,11 +129,7 @@ function NewChatPanel({
         <h3 className="text-sm font-semibold text-accent">New chat</h3>
 
         {legacy ? (
-          <LegacyPersonaPicker
-            snapshot={snapshot}
-            persona={persona}
-            onChange={setPersona}
-          />
+          <PodTooOldNotice />
         ) : (
           <>
             <div>
@@ -214,57 +182,12 @@ function NewChatPanel({
                 </span>
               </label>
             )}
-
-            {advanced ? (
-              <label className="block">
-                <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-                  Start as a specific persona
-                </span>
-                <select
-                  value={persona}
-                  onChange={(e) => setPersona(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
-                >
-                  <option value="">
-                    {selectedPreset
-                      ? `Default (${selectedPreset.default_persona})`
-                      : "Default"}
-                  </option>
-                  {(roster ?? []).map((p) => (
-                    <option key={p.slug} value={p.slug} disabled={!p.installed}>
-                      {p.name || p.slug}
-                      {p.installed ? "" : " — not installed"}
-                    </option>
-                  ))}
-                </select>
-                {roster === null && (
-                  <span className="mt-1 block text-xs text-gray-500">Loading roster…</span>
-                )}
-                {/* A preset naming a persona this pod lacks is a real state the pod
-                    reports. Say so, rather than hiding the row and making the agent
-                    look smaller than it is. */}
-                {roster?.some((p) => !p.installed) && (
-                  <span className="mt-1 block text-xs text-amber-400/80">
-                    This agent names {roster.filter((p) => !p.installed).length} persona(s)
-                    this pod does not have.
-                  </span>
-                )}
-              </label>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAdvanced(true)}
-                className="text-xs text-accent-light/80 hover:text-accent-light underline"
-              >
-                Advanced — start as a specific persona
-              </button>
-            )}
           </>
         )}
 
         <button
           onClick={create}
-          disabled={creating || (legacy && !persona) || (!legacy && !preset)}
+          disabled={creating || legacy || !preset}
           className="w-full px-4 py-2 bg-accent hover:bg-accent-light text-white rounded text-sm font-medium disabled:opacity-40"
         >
           {creating ? "Creating…" : "Start chat"}
@@ -274,63 +197,21 @@ function NewChatPanel({
   );
 }
 
-/// The pre-presets picker, kept for pods that have not upgraded yet. Deleting it
-/// would make this build refuse to start a chat against an older agent, which is a
-/// worse failure than an out-of-date-looking form.
-function LegacyPersonaPicker({
-  snapshot,
-  persona,
-  onChange,
-}: {
-  snapshot: ProjectSnapshot;
-  persona: string;
-  onChange: (slug: string) => void;
-}) {
-  // Default to the agent's configured persona if it is installed, else the
-  // orchestrator, else whatever is first.
-  useEffect(() => {
-    if (persona) return;
-    const fallback =
-      snapshot.personas.find((p) => p.slug === "orchestrator-agent")?.slug ??
-      snapshot.personas[0]?.slug ??
-      "";
-    let cancelled = false;
-    invoke<AgentInfo>("agent_info")
-      .then((info) => {
-        if (cancelled) return;
-        const wanted = info.default_persona;
-        onChange(
-          wanted && snapshot.personas.some((p) => p.slug === wanted) ? wanted : fallback,
-        );
-      })
-      .catch(() => {
-        if (!cancelled) onChange(fallback);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [snapshot.personas, persona, onChange]);
-
+/// A pod with no agent presets cannot start a chat from this build. The old answer
+/// was a persona picker, but a chat is started *as an agent* now — the persona is the
+/// agent's own business — so offering personas here would recreate exactly the entry
+/// point that was removed. Name the reason instead of disabling a button in silence.
+function PodTooOldNotice() {
   return (
-    <label className="block">
-      <span className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-        Persona
-      </span>
-      <select
-        value={persona}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-surface-2 border border-surface-3 rounded text-sm"
-      >
-        {snapshot.personas.map((p) => (
-          <option key={p.slug} value={p.slug}>
-            {p.name} ({p.slug})
-          </option>
-        ))}
-      </select>
-      <span className="mt-1 block text-xs text-gray-500">
-        This agent predates agent presets, so a persona is still the entry point.
-      </span>
-    </label>
+    <div className="space-y-2">
+      <p className="text-sm text-gray-300">
+        This pod reports no agents.
+      </p>
+      <p className="text-xs text-gray-500">
+        Chats are started as an agent, which needs agent 0.30 or newer. Upgrade the
+        pod, then reconnect — its existing conversations are unaffected.
+      </p>
+    </div>
   );
 }
 
