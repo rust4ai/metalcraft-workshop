@@ -35,7 +35,7 @@ pub use connection::{LocalConnection, ProjectConnection, RemoteConnection};
 pub use diagnostics::{ChatTimeline, DiagnosticsSessionSummary, TimelineEvent};
 pub use flow_templates::{FlowTemplate, FlowTemplateSummary};
 pub use gateway::{Channel, GatewayEvent};
-pub use integrations::{PackDetail, PackSummary};
+pub use integrations::{IntegrationDetail, IntegrationSummary};
 pub use keys::{KeyEntry, KeySummary, RecommendedKey};
 pub use personas::{Persona, PersonaSummary};
 pub use project::{ConnectionMode, ProjectLayout, ProjectSnapshot, scan_local};

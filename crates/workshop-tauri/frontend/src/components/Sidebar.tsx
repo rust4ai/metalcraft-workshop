@@ -26,7 +26,8 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "sessions", label: "Sessions" },
   { id: "api_tools", label: "API tools" },
   { id: "keys", label: "Keys" },
-  { id: "packs", label: "Packs" },
+  { id: "packs", label: "Agent packs" },
+  { id: "integrations", label: "Integrations" },
   { id: "gateway", label: "Gateway" },
   { id: "network", label: "Network" },
   { id: "settings", label: "Settings" },
@@ -75,7 +76,7 @@ export default function Sidebar({ snapshot, section, selectedId, onSection, onSe
                     {it.packId && (
                       <span
                         className="px-1 py-px text-[9px] uppercase tracking-wide bg-accent/20 text-accent-light rounded font-mono"
-                        title={`from '${it.packId}' integration — read-only`}
+                        title={`from the '${it.packId}' pack — read-only`}
                       >
                         {it.packId}
                       </span>
@@ -181,8 +182,8 @@ interface SidebarItem {
   id: string;
   label: string;
   sub?: string;
-  /// If set, the item is provided by an enabled integration and renders
-  /// with a small "pack" chip + slightly dimmed text.
+  /// If set, the item comes from an installed pack rather than from this
+  /// project, and renders with a small pack chip + slightly dimmed text.
   packId?: string | null;
 }
 
@@ -261,6 +262,9 @@ function listItems(
       }));
     case "packs":
       return [];
+    case "integrations":
+      // The Integrations panel fetches and lists its own inventory.
+      return [];
     case "gateway":
       // The Gateway panel fetches and lists its own channels (like Packs).
       return [];
@@ -309,7 +313,11 @@ function emptyMessage(snap: ProjectSnapshot, s: Section): string {
       return "No API keys stored yet. Click + New Key to add one.";
     case "packs":
       return snap.mode === "remote"
-        ? "Packs panel loads its own list."
+        ? "Agent packs load in the main panel."
+        : "Agent packs require a remote connection.";
+    case "integrations":
+      return snap.mode === "remote"
+        ? "Integrations load in the main panel."
         : "Integrations require a remote connection.";
     case "gateway":
       return snap.mode === "remote"

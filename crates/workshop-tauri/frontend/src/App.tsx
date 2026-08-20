@@ -11,7 +11,8 @@ import ChatsView from "./components/ChatsView";
 import SessionsView from "./components/SessionsView";
 import ApiToolsView from "./components/ApiToolsView";
 import KeysView from "./components/KeysView";
-import PacksView from "./components/PacksView";
+import AgentPacksView from "./components/AgentPacksView";
+import IntegrationsView from "./components/IntegrationsView";
 import GatewayView from "./components/GatewayView";
 import NetworkView from "./components/NetworkView";
 import SettingsView from "./components/SettingsView";
@@ -26,6 +27,7 @@ export type Section =
   | "api_tools"
   | "keys"
   | "packs"
+  | "integrations"
   | "gateway"
   | "network"
   | "settings";
@@ -39,8 +41,8 @@ export default function App() {
   // forever. It stays clickable/closable for as long as it's shown.
   const { lastError, clearError, pendingInstallUrl, clearPendingInstall } = workshop;
 
-  // A deep link is a request to look at a pack, so send the user where that
-  // happens. Switching sections here rather than inside PacksView means the view is
+  // A deep link is a request to look at an agent pack, so send the user where that
+  // happens. Switching sections here rather than inside the view means it is
   // mounted by the time it needs to react to the URL.
   useEffect(() => {
     if (pendingInstallUrl) setSection("packs");
@@ -199,12 +201,17 @@ export default function App() {
             />
           )}
           {section === "packs" && (
-            <PacksView
+            <AgentPacksView
+              snapshot={snap}
+              deepLinkUrl={pendingInstallUrl}
+              onDeepLinkConsumed={clearPendingInstall}
+            />
+          )}
+          {section === "integrations" && (
+            <IntegrationsView
               snapshot={snap}
               selectedId={selectedId}
               onSelect={setSelectedId}
-              deepLinkUrl={pendingInstallUrl}
-              onDeepLinkConsumed={clearPendingInstall}
             />
           )}
           {section === "gateway" && (

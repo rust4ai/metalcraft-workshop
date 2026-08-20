@@ -8,42 +8,45 @@ import type {
   InstalledAgentPack,
   Lock,
   PackSource,
-  PackDetail,
-  PackSummary,
   ProjectSnapshot,
   RestoreLockfileResult,
   RestoreOutcome,
-  UninstallPackResult,
 } from "../types";
 
 interface Props {
   snapshot: ProjectSnapshot;
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
   /// Archive URL from a `metalcraft-workshop://install` deep link, passed straight
   /// through to the install dialog.
   deepLinkUrl?: string | null;
   onDeepLinkConsumed?: () => void;
 }
 
-export default function PacksView({
+/**
+ * Agent packs — the install unit.
+ *
+ * A pack carries one agent preset plus every persona, skill and integration it
+ * needs, so installing one is the moment a person grants an agent reach into their
+ * accounts. The dialog below therefore *inspects first*: the pod validates the
+ * archive, derives what it would reach from the archive's own tool definitions, and
+ * says so — and only then offers to install. Showing a permission summary after the
+ * fact would not be consent.
+ *
+ * What a pack brought with it is inventoried on the Integrations page; this one is
+ * about the packs themselves.
+ */
+export default function AgentPacksView({
   snapshot,
-  selectedId,
-  onSelect,
   deepLinkUrl,
   onDeepLinkConsumed,
 }: Props) {
-  const reportError = useReportError();
-  const [packs, setPacks] = useState<PackSummary[] | null>(null);
-
   // Pack state lives on the agent — local mode has nothing to show.
   if (snapshot.mode !== "remote") {
     return (
       <div className="h-full flex items-center justify-center p-6 text-center">
         <div className="max-w-md text-sm text-gray-400">
           <p className="mb-2">
-            Integrations are managed by the agent process and are only
-            visible when connected to a remote agent.
+            Agent packs are installed into the agent process and are only visible
+            when connected to a remote agent.
           </p>
           <p className="text-xs text-gray-500">
             Start the agent with{" "}
@@ -57,94 +60,14 @@ export default function PacksView({
     );
   }
 
-  const refresh = async () => {
-    try {
-      const list = await invoke<PackSummary[]>("list_integrations");
-      setPacks(list);
-    } catch (e) {
-      reportError("list_integrations", e);
-    }
-  };
-
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!packs) {
-    return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
-  }
-
-  if (selectedId) {
-    const summary = packs.find((p) => p.id === selectedId);
-    return (
-      <PackDetailPanel
-        packId={selectedId}
-        summaryEnabled={summary?.enabled ?? false}
-        onToggled={refresh}
-        onUninstalled={() => {
-          onSelect(null);
-          refresh();
-        }}
-        onBack={() => onSelect(null)}
-      />
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-3xl space-y-3">
         <AgentPacks
           snapshot={snapshot}
-          onChanged={refresh}
           deepLinkUrl={deepLinkUrl}
           onDeepLinkConsumed={onDeepLinkConsumed}
         />
-
-        <h2 className="text-sm font-semibold text-accent pt-4">Integrations</h2>
-        <p className="text-xs text-gray-500">
-          The HTTP-API tools behind each service. These are not installed on their
-          own — an agent pack vendors the ones its personas need, so this list is a
-          read-only view of what those packs brought with them.
-        </p>
-        {packs.length === 0 ? (
-          <div className="text-sm text-gray-500 italic">No packs installed.</div>
-        ) : (
-          <ul className="space-y-2">
-            {packs.map((p) => (
-              <li
-                key={p.id}
-                className="bg-surface-1 border border-surface-3 rounded p-4 flex items-start gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onSelect(p.id)}
-                      className="text-sm font-medium text-gray-200 hover:text-accent-light text-left"
-                    >
-                      {p.name}
-                    </button>
-                    <span className="text-xs text-gray-600 font-mono">
-                      v{p.version}
-                    </span>
-
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">{p.description}</p>
-                  <p className="text-xs text-gray-500 mt-2 font-mono">
-                    {p.personas} personas · {p.skills} skills · {p.api_tools} tools
-                    · {p.flow_templates} templates
-                  </p>
-                  {(p.requires_env?.length ?? 0) > 0 && (
-                    <p className="text-[10px] text-amber-400 mt-1">
-                      Requires env: {p.requires_env?.join(", ")}
-                    </p>
-                  )}
-                </div>
-
-              </li>
-            ))}
-          </ul>
-        )}
         <LockfilePanel />
       </div>
     </div>
@@ -182,7 +105,10 @@ function LockfilePanel() {
     }
   };
 
-  const count = (lock?.packs?.length ?? 0) + (lock?.flows?.length ?? 0);
+  const count =
+    (lock?.agent_packs?.length ?? 0) +
+    (lock?.packs?.length ?? 0) +
+    (lock?.flows?.length ?? 0);
 
   return (
     <div className="mt-3 bg-surface-1 border border-surface-3 rounded p-4">
@@ -201,7 +127,9 @@ function LockfilePanel() {
             <p className="text-xs text-gray-500">Nothing pinned yet — install a pack or flow.</p>
           ) : (
             <>
-              <LockGroup title="Packs" entries={lock.packs} />
+              <LockGroup title="Agent packs" entries={lock.agent_packs} />
+              {/* `packs` pins the integrations those agent packs vendored. */}
+              <LockGroup title="Integrations" entries={lock.packs} />
               <LockGroup title="Flows" entries={lock.flows} />
               <button
                 onClick={restore}
@@ -252,108 +180,13 @@ function LockGroup({ title, entries }: { title: string; entries: Lock["packs"] }
     </div>
   );
 }
-function PackDetailPanel({
-  packId,
-  summaryEnabled,
-  onToggled,
-  onUninstalled,
-  onBack,
-}: {
-  packId: string;
-  summaryEnabled: boolean;
-  onToggled: () => void;
-  onUninstalled: () => void;
-  onBack: () => void;
-}) {
-  const reportError = useReportError();
-  const [detail, setDetail] = useState<PackDetail | null>(null);
 
-  useEffect(() => {
-    invoke<PackDetail>("get_integration", { id: packId })
-      .then(setDetail)
-      .catch((e) => reportError("get_integration", e));
-  }, [packId, reportError]);
-
-  if (!detail) return <div className="p-6 text-gray-500 text-sm">Loading…</div>;
-
-  return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-3xl space-y-4">
-        <button
-          onClick={onBack}
-          className="text-xs text-gray-500 hover:text-gray-300"
-        >
-          ← back to packs
-        </button>
-        <header>
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-accent">{detail.name}</h2>
-            <span className="text-xs text-gray-600 font-mono">v{detail.version}</span>
-            {detail.enabled && (
-              <span className="px-1.5 py-0.5 text-[10px] uppercase tracking-wide bg-green-900/40 text-green-300 rounded">
-                Enabled
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-gray-400 mt-1">{detail.description}</p>
-          <p className="text-xs text-gray-500 mt-1 font-mono">id: {detail.id}</p>
-          {(detail.requires_env?.length ?? 0) > 0 && (
-            <p className="text-xs text-amber-400 mt-1">
-              Requires env: {detail.requires_env?.join(", ")}
-            </p>
-          )}
-        </header>
-
-        <p className="text-xs text-gray-500">
-          Provided by an installed agent pack. To remove these tools, uninstall the
-          pack that vendors them.
-        </p>
-
-        <Section title="Personas" items={detail.personas} />
-        <Section title="Skills" items={detail.skills} />
-        <Section title="API tools" items={detail.api_tools} />
-        <Section title="Flow templates" items={detail.flow_templates} />
-      </div>
-    </div>
-  );
-}
-function Section({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <h3 className="text-xs uppercase tracking-wide text-gray-500 mb-1">{title}</h3>
-      <ul className="grid grid-cols-2 gap-1">
-        {items.map((it) => (
-          <li
-            key={it}
-            className="px-2 py-1 text-xs bg-surface-2 border border-surface-3 rounded font-mono text-gray-300"
-          >
-            {it}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/**
- * Agent packs — the install unit.
- *
- * A pack carries one agent preset plus every persona, skill and integration it
- * needs, so installing one is the moment a person grants an agent reach into their
- * accounts. The dialog below therefore *inspects first*: the pod validates the
- * archive, derives what it would reach from the archive's own tool definitions, and
- * says so — and only then offers to install. Showing a permission summary after the
- * fact would not be consent.
- */
 function AgentPacks({
   snapshot,
-  onChanged,
   deepLinkUrl,
   onDeepLinkConsumed,
 }: {
   snapshot: ProjectSnapshot;
-  onChanged: () => void;
   deepLinkUrl?: string | null;
   onDeepLinkConsumed?: () => void;
 }) {
@@ -391,10 +224,7 @@ function AgentPacks({
         registries={registries}
         deepLinkUrl={deepLinkUrl}
         onDeepLinkConsumed={onDeepLinkConsumed}
-        onInstalled={() => {
-          refresh();
-          onChanged();
-        }}
+        onInstalled={refresh}
       />
 
       {packs === null ? (
@@ -422,10 +252,7 @@ function AgentPacks({
               <UninstallAgentPack
                 id={p.id}
                 name={p.manifest.name}
-                onDone={() => {
-                  refresh();
-                  onChanged();
-                }}
+                onDone={refresh}
               />
             </li>
           ))}

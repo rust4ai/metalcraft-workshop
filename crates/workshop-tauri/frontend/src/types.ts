@@ -367,9 +367,20 @@ export interface FlowTemplate {
 
 // ── Integrations ──────────────────────────────────────────────────────
 
-export type PackSummary = S["IntegrationSummary"];
+// An integration is the HTTP-API tools behind one service, vendored by whatever
+// agent pack needed them. Personas and skills belong to the pack, not to the
+// integration, so the two count/name fields the agent still sends for them are
+// dropped here rather than carried into a view that would have to explain them.
 
-export type PackDetail = S["IntegrationDetail"];
+export type IntegrationSummary = Omit<
+  S["IntegrationSummary"],
+  "personas" | "skills"
+>;
+
+export type IntegrationDetail = Omit<
+  S["IntegrationDetail"],
+  "personas" | "skills"
+>;
 
 // ── Gateway ────────────────────────────────────────────────────────────────
 

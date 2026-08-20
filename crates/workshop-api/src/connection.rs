@@ -23,7 +23,7 @@ use crate::diagnostics::{self, ChatTimeline, DiagnosticsSessionSummary};
 use crate::flow_templates::{self, FlowTemplate, FlowTemplateSummary};
 use crate::flows;
 use crate::gateway::{Channel, GatewayEvent};
-use crate::integrations::{PackDetail, PackSummary};
+use crate::integrations::{IntegrationDetail, IntegrationSummary};
 use crate::keys::{self, KeyEntry, KeySummary, RecommendedKey};
 use crate::personas::{self, Persona};
 use crate::project::{ConnectionMode, ProjectLayout, ProjectSnapshot};
@@ -280,17 +280,17 @@ pub trait ProjectConnection: Send + Sync {
 
     // Integrations — remote-only. Pack state is managed by the agent
     // process (lives in `<data>/integrations.json`), not the workshop.
-    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>>;
-    async fn get_integration(&self, id: &str) -> anyhow::Result<PackDetail>;
+    async fn list_integrations(&self) -> anyhow::Result<Vec<IntegrationSummary>>;
+    async fn get_integration(&self, id: &str) -> anyhow::Result<IntegrationDetail>;
     async fn set_pack_enabled(&self, id: &str, enabled: bool) -> anyhow::Result<()>;
     /// Install a pack from the registry, optionally pinning a version and/or a
-    /// content hash. Returns the installed [`PackSummary`] (enabled + pinned).
+    /// content hash. Returns the installed [`IntegrationSummary`] (enabled + pinned).
     async fn install_pack(
         &self,
         slug: &str,
         version: Option<&str>,
         content_sha256: Option<&str>,
-    ) -> anyhow::Result<PackSummary>;
+    ) -> anyhow::Result<IntegrationSummary>;
     /// Uninstall a pack. Returns `UninstallPackResult` (`dependent_flows` /
     /// `dependent_personas` that still reference it) as raw JSON.
     async fn uninstall_pack(&self, id: &str) -> anyhow::Result<serde_json::Value>;
@@ -615,10 +615,10 @@ impl ProjectConnection for LocalConnection {
         Err(chat::not_supported_in_local_mode("Scheduled tasks"))
     }
 
-    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>> {
+    async fn list_integrations(&self) -> anyhow::Result<Vec<IntegrationSummary>> {
         Err(chat::not_supported_in_local_mode("Integrations"))
     }
-    async fn get_integration(&self, _id: &str) -> anyhow::Result<PackDetail> {
+    async fn get_integration(&self, _id: &str) -> anyhow::Result<IntegrationDetail> {
         Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn set_pack_enabled(&self, _id: &str, _enabled: bool) -> anyhow::Result<()> {
@@ -629,7 +629,7 @@ impl ProjectConnection for LocalConnection {
         _slug: &str,
         _version: Option<&str>,
         _content_sha256: Option<&str>,
-    ) -> anyhow::Result<PackSummary> {
+    ) -> anyhow::Result<IntegrationSummary> {
         Err(chat::not_supported_in_local_mode("Integrations"))
     }
     async fn uninstall_pack(&self, _id: &str) -> anyhow::Result<serde_json::Value> {
@@ -1700,7 +1700,7 @@ impl ProjectConnection for RemoteConnection {
         Ok(())
     }
 
-    async fn list_integrations(&self) -> anyhow::Result<Vec<PackSummary>> {
+    async fn list_integrations(&self) -> anyhow::Result<Vec<IntegrationSummary>> {
         let resp = ok_or_err(
             self.get("/api/v1/integrations").send().await?,
             "GET integrations",
@@ -1708,7 +1708,7 @@ impl ProjectConnection for RemoteConnection {
         .await?;
         Ok(resp.json().await?)
     }
-    async fn get_integration(&self, id: &str) -> anyhow::Result<PackDetail> {
+    async fn get_integration(&self, id: &str) -> anyhow::Result<IntegrationDetail> {
         let resp = ok_or_err(
             self.get(&format!("/api/v1/integrations/{id}")).send().await?,
             "GET integration-pack",
@@ -1736,7 +1736,7 @@ impl ProjectConnection for RemoteConnection {
         slug: &str,
         version: Option<&str>,
         content_sha256: Option<&str>,
-    ) -> anyhow::Result<PackSummary> {
+    ) -> anyhow::Result<IntegrationSummary> {
         #[derive(serde::Serialize)]
         struct Body<'a> {
             slug: &'a str,

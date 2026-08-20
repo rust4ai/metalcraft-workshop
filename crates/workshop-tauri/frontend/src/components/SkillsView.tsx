@@ -133,7 +133,7 @@ export default function SkillsView({ snapshot, selectedSlug, onSelect }: Props) 
       {isReadOnly && (
         <div className="px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs text-accent-light">
           Read-only — provided by the{" "}
-          <span className="font-mono">{packId}</span> integration.
+          <span className="font-mono">{packId}</span> agent pack.
         </div>
       )}
       <div className="flex items-center gap-3 pt-3 border-t border-surface-3">

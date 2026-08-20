@@ -22,7 +22,7 @@ use workshop_api::{
     diagnostics,
     flow_templates::{FlowTemplate, FlowTemplateSummary},
     gateway::{Channel, GatewayEvent},
-    integrations::{PackDetail, PackSummary},
+    integrations::{IntegrationDetail, IntegrationSummary},
     keys::{KeyEntry, RecommendedKey},
     personas, project, skills,
     watcher::{self, ChangedPath, ProjectWatcher},
@@ -600,13 +600,12 @@ async fn get_chat(
 
 /// Start a chat.
 ///
-/// Every argument is optional: a person picks an **agent**, and the preset supplies
-/// the persona. `persona_slug` is the Advanced escape hatch and must be inside that
-/// agent's roster — the pod enforces it, so a stale UI cannot widen the roster by
-/// asking nicely. Passing nothing reproduces the pre-preset behaviour.
+/// A person picks an **agent** — that is the whole choice. The persona follows from
+/// the preset and is never named here: `NewChat::persona_slug` stays on the wire for
+/// other clients, but this command has no way to set it, so no workshop UI can
+/// reintroduce a persona as the entry point without changing this signature.
 #[tauri::command]
 async fn create_chat(
-    persona_slug: Option<String>,
     model_name: Option<String>,
     agent_preset: Option<String>,
     instance_id: Option<String>,
@@ -616,7 +615,7 @@ async fn create_chat(
     let conn = require_connection(&state)?;
     conn.create_chat(&NewChat {
         agent_preset: agent_preset.as_deref(),
-        persona_slug: persona_slug.as_deref(),
+        persona_slug: None,
         instance_id: instance_id.as_deref(),
         model_name: model_name.as_deref(),
         name: name.as_deref(),
@@ -1064,7 +1063,7 @@ async fn cancel_scheduled_task(
 #[tauri::command]
 async fn list_integrations(
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<PackSummary>, String> {
+) -> Result<Vec<IntegrationSummary>, String> {
     let conn = require_connection(&state)?;
     conn.list_integrations().await.map_err(|e| e.to_string())
 }
@@ -1073,7 +1072,7 @@ async fn list_integrations(
 async fn get_integration(
     id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<PackDetail, String> {
+) -> Result<IntegrationDetail, String> {
     let conn = require_connection(&state)?;
     conn.get_integration(&id).await.map_err(|e| e.to_string())
 }
@@ -1103,7 +1102,7 @@ async fn install_pack(
     version: Option<String>,
     content_sha256: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<PackSummary, String> {
+) -> Result<IntegrationSummary, String> {
     let conn = require_connection(&state)?;
     let summary = conn
         .install_pack(&slug, version.as_deref(), content_sha256.as_deref())
